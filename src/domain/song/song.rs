@@ -7,5 +7,6 @@ pub struct Song {
     pub album: String,
     pub remix: String,
     pub search_blob: String,
+    pub file_path: String,
     //pub tags: Vec<String>, // lowercase tags
 }

@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
             //     "heavy metal".to_string(),
             //     "old".to_string(),
             // ],
+            file_path: "/home/Music/Toranja - Laços.mp3".to_string(),
         },
         domain::song::song::Song {
             id: 0,
@@ -35,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
             remix: "Andy Blueman".to_string(),
             release_year: 1991,
             search_blob: "tuvan gaia trance favorite old 1991".to_string(),
+            file_path: "/home/Music/Toranja - Laços.mp3".to_string(),
             // tags: vec![
             //     "trance".to_string(),
             //     "favorite".to_string(),
@@ -56,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
 
     //let path = get_or_create_config_dir();
     let config = config::config::Config::new()?;
-    println!("{:#?}", config.database_url);
+    //println!("{:#?}", config.database_url);
     let sqlite = database::sqlite::SqliteDb::new(&config.database_url).await?;
 
     // id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,8 +70,8 @@ async fn main() -> anyhow::Result<()> {
     // Now insert the row:
     for val in songs {
         let result = sqlx::query(
-            "INSERT INTO song (title, artist, release_year, album, remix, search_blob)
-                    VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;",
+            "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING;",
         )
         .bind(val.title)
         .bind(val.artist)
@@ -77,13 +79,14 @@ async fn main() -> anyhow::Result<()> {
         .bind(val.album)
         .bind(val.remix)
         .bind(val.search_blob)
+        .bind(val.file_path)
         .execute(&sqlite.pool)
         .await;
 
-        println!("{:#?}", result);
+        //println!("{:#?}", result);
     }
     let songs_db: Vec<song::song::Song> = sqlx::query_as::<sqlx::Sqlite, song::song::Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob FROM song",
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path FROM song",
     )
     .fetch_all(&sqlite.pool)
     .await?;
@@ -98,4 +101,15 @@ async fn main() -> anyhow::Result<()> {
     //     .await?;
     //println!("{:#?}", songs_db);
     Ok(())
+
+    //TODO:
+    // read modules and fix the abomination
+    // abstract database access layer (repositories)
+    // implement domain
+    // remove all tests from main
+    // high volume tests to compare sqlite vs vector
+    // add settings
+    // try local web?
+    // add frontend
+    // make tauri alternative
 }
