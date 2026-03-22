@@ -16,4 +16,13 @@ impl<R: SongRepository> SongService<R> {
     pub async fn list_songs(&self) -> Vec<Song> {
         self.repo.get_all().await
     }
+
+    pub async fn search_by(
+        &self,
+        songs: &Vec<Song>,
+        search: Vec<&str>,
+        max_results: usize,
+    ) -> Vec<Song> {
+        self.repo.search_by(songs, search, max_results).await
+    }
 }

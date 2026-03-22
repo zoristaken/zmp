@@ -39,4 +39,22 @@ impl SongRepository for SqliteSongRepository {
             .await
             .unwrap()
     }
+
+    async fn search_by(
+        &self,
+        songs: &Vec<Song>,
+        search: Vec<&str>,
+        max_results: usize,
+    ) -> Vec<Song> {
+        songs
+            .iter()
+            .filter(|s| {
+                search
+                    .iter()
+                    .all(|x| !x.is_empty() && s.search_blob.contains(x))
+            })
+            .take(max_results)
+            .cloned()
+            .collect()
+    }
 }

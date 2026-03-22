@@ -1,4 +1,4 @@
-#[derive(sqlx::FromRow, Debug)]
+#[derive(sqlx::FromRow, Debug, Clone)]
 pub struct Song {
     pub id: i64,
     pub title: String,
