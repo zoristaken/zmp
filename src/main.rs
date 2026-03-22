@@ -1,13 +1,36 @@
-use crate::domain::song;
-
+mod application;
 mod config;
 mod database;
 mod domain;
+mod infrastructure;
+
+use application::SongService;
+use infrastructure::SqliteSongRepository;
+use std::sync::Arc;
+
+use crate::domain::SongRepository;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let songs: Vec<domain::song::song::Song> = vec![
-        domain::song::song::Song {
+    let config = config::Config::new()?;
+    //println!("{:#?}", config.database_url);
+    let sqlite = Arc::new(database::SqliteDb::new(&config.database_url).await?);
+    let repo = SqliteSongRepository::new(sqlite.clone());
+    //let repo2 = SqliteSongRepository::new(sqlite.clone());
+    let service = SongService::new(repo);
+
+    let songs = service.list_songs().await;
+
+    for s in &songs {
+        println!("Songs List: {:?}", s);
+    }
+
+    if songs.len() != 0 {
+        return Ok(());
+    }
+
+    let songs: Vec<domain::Song> = vec![
+        domain::Song {
             id: 0,
             title: "Enter Sandman".to_string(),
             artist: "Metallica".to_string(),
@@ -28,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
             // ],
             file_path: "/home/Music/Toranja - Laços.mp3".to_string(),
         },
-        domain::song::song::Song {
+        domain::Song {
             id: 0,
             title: "Tuvan".to_string(),
             artist: "Gaia".to_string(),
@@ -44,6 +67,14 @@ async fn main() -> anyhow::Result<()> {
             // ],
         },
     ];
+
+    service.add_songs(songs).await;
+
+    let ss = service.list_songs().await;
+    for s in ss {
+        println!("Songs List: {:?}", s);
+    }
+
     // let searchable = vec!["91"];
 
     // let results: Vec<&Song> = songs
@@ -56,11 +87,6 @@ async fn main() -> anyhow::Result<()> {
     //     .take(10)
     //     .collect();
 
-    //let path = get_or_create_config_dir();
-    let config = config::config::Config::new()?;
-    //println!("{:#?}", config.database_url);
-    let sqlite = database::sqlite::SqliteDb::new(&config.database_url).await?;
-
     // id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     // name                    TEXT                NOT NULL,
     // artist                  TEXT,
@@ -68,34 +94,16 @@ async fn main() -> anyhow::Result<()> {
     // album                   TEXT,
     // remix                   TEXT
     // Now insert the row:
-    for val in songs {
-        let result = sqlx::query(
-            "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING;",
-        )
-        .bind(val.title)
-        .bind(val.artist)
-        .bind(val.release_year)
-        .bind(val.album)
-        .bind(val.remix)
-        .bind(val.search_blob)
-        .bind(val.file_path)
-        .execute(&sqlite.pool)
-        .await;
+    //service.add_songs(songs).await;
 
-        //println!("{:#?}", result);
-    }
-    let songs_db: Vec<song::song::Song> = sqlx::query_as::<sqlx::Sqlite, song::song::Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path FROM song",
-    )
-    .fetch_all(&sqlite.pool)
-    .await?;
+    // let songs_db: Vec<domain::Song> = sqlx::query_as::<sqlx::Sqlite, domain::Song>(
+    //     "SELECT id, title, artist, release_year, album, remix, search_blob, file_path FROM song",
+    // )
+    // .fetch_all(&sqlite.pool)
+    // .await?;
 
-    println!("size: {}", songs_db.len());
+    //println!("size: {}", songs.len());
 
-    for s in songs_db {
-        println!("Found song: {:?}", s);
-    }
     // let songs_db = sqlx::query("SELECT * FROM song")
     //     .fetch_all(&sqlite.pool)
     //     .await?;
@@ -104,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
 
     //TODO:
     // read modules and fix the abomination
-    // abstract database access layer (repositories)
+    // abstract database access layer (repositories/services)
     // implement domain
     // remove all tests from main
     // high volume tests to compare sqlite vs vector

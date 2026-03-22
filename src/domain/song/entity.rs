@@ -1,5 +1,3 @@
-use sqlx::FromRow;
-
 #[derive(sqlx::FromRow, Debug)]
 pub struct Song {
     pub id: i64,

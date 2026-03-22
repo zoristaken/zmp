@@ -1,1 +1,5 @@
-pub mod song;
+mod entity;
+mod repository;
+
+pub use entity::Song;
+pub use repository::SongRepository;
