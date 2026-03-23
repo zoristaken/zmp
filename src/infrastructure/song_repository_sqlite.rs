@@ -26,8 +26,6 @@ impl SongRepository for SqliteSongRepository {
         .bind(val.file_path)
         .execute(&self.db.pool)
         .await;
-
-            //println!("{:#?}", result);
         }
     }
 
@@ -40,6 +38,8 @@ impl SongRepository for SqliteSongRepository {
             .unwrap()
     }
 
+    //TODO: change location - temporary for testing
+    //implement full sqlite alternative for comparison
     async fn search_by(
         &self,
         songs: &Vec<Song>,

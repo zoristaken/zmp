@@ -4,6 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const APP_NAME: &str = "zmp";
+const APP_NAME_DEV: &str = "zmp_dev";
 const HOME: &str = "HOME";
 const WINDOWS_DEFAULT_PATH: &str = "APPDATA";
 const MAC_DEFAULT_PATH: &str = "Library/Application Support";
@@ -20,10 +21,10 @@ impl Config {
     pub fn new() -> anyhow::Result<Config> {
         let config_path = Config::get_or_create_config_dir()?;
         let database_url: String;
-        if !cfg!(debug_assertions) {
-            database_url = format!("sqlite:///{}/{}.db", config_path, APP_NAME);
+        if cfg!(debug_assertions) {
+            database_url = format!("sqlite:///{}/{}.db", config_path, APP_NAME_DEV);
         } else {
-            database_url = format!("sqlite:{}.db", APP_NAME);
+            database_url = format!("sqlite:///{}/{}.db", config_path, APP_NAME);
         }
 
         Ok(Config {
@@ -48,7 +49,7 @@ impl Config {
                     .map_err(|_| anyhow!("Could not determine config directory"))?
             }
         }
-        .join("zmp");
+        .join(APP_NAME);
 
         fs::create_dir_all(&config_dir)
             .map_err(|e| anyhow!("Failed to create config directory: {}", e))?;

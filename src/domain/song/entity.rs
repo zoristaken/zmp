@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
 pub struct Song {
     pub id: i64,
@@ -8,5 +9,4 @@ pub struct Song {
     pub remix: String,
     pub search_blob: String,
     pub file_path: String,
-    //pub tags: Vec<String>, // lowercase tags
 }
