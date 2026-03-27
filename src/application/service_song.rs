@@ -27,6 +27,10 @@ impl<R: SongRepository> SongService<R> {
     }
 
     pub async fn search_by_db(&self, words: Vec<&str>, max_results: i64) -> Vec<Song> {
+        if words.len() == 0 {
+            return vec![];
+        }
+
         self.repo.search_by_db(words, max_results).await
     }
 }

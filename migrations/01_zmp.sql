@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS song_filter
     song_id                 INT NOT NULL,
     filter_id               INT NOT NULL,
     FOREIGN KEY (song_id)   REFERENCES song (id) ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (filter_id) REFERENCES filters (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (filter_id) REFERENCES filter (id) ON UPDATE CASCADE ON DELETE CASCADE,
     UNIQUE(song_id, filter_id)
 );
 

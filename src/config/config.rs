@@ -18,6 +18,9 @@ pub struct Config {
 }
 
 impl Config {
+    //if multiple databases could be used in the future, refactor code
+    //to take the type of dabase as an argument so you can generate
+    //the appropriate path or url
     pub fn new() -> anyhow::Result<Config> {
         let config_path = Config::get_or_create_config_dir()?;
         let database_url: String;

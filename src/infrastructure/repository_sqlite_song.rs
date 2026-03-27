@@ -6,11 +6,13 @@ pub struct SqliteSongRepository {
     db: Arc<SqliteDb>,
 }
 
-impl SongRepository for SqliteSongRepository {
-    fn new(db: Arc<SqliteDb>) -> Self {
+impl SqliteSongRepository {
+    pub fn new(db: Arc<SqliteDb>) -> Self {
         Self { db }
     }
+}
 
+impl SongRepository for SqliteSongRepository {
     async fn add_all(&self, songs: Vec<Song>) {
         for val in songs {
             let _ = sqlx::query(
@@ -60,14 +62,12 @@ impl SongRepository for SqliteSongRepository {
     }
 
     async fn search_by_db(&self, words: Vec<&str>, max_results: i64) -> Vec<Song> {
-        if words.len() == 0 {
-            return vec![];
-        }
-
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE ",
         );
-
+        //TODO: after using the app, verify if searching by substrings actually happens
+        //I have a feeling we can improve the performance by moving to a prefix search
+        //without any side effects at all
         for (i, word) in words.iter().enumerate() {
             qb.push("search_blob LIKE ");
             qb.push_bind(format!("%{}%", word));
