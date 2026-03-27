@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS song (
     remix        TEXT,
     search_blob  TEXT,
     file_path    TEXT,
+    duration     INTEGER,
     UNIQUE(title, artist, remix)
 );
 
@@ -25,4 +26,12 @@ CREATE TABLE IF NOT EXISTS song_filters
     FOREIGN KEY (song_id)   REFERENCES song (id) ON UPDATE SET NULL ON DELETE SET NULL,
     FOREIGN KEY (filter_id) REFERENCES filters (id) ON UPDATE SET NULL ON DELETE SET NULL,
     UNIQUE(song_id, filter_id)
+);
+
+CREATE TABLE IF NOT EXISTS settings
+(
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    key     TEXT,
+    value   TEXT,
+    UNIQUE(key, value)
 );
