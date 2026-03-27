@@ -9,4 +9,5 @@ pub struct Song {
     pub remix: String,
     pub search_blob: String,
     pub file_path: String,
+    pub duration: i64,
 }

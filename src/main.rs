@@ -29,10 +29,19 @@ async fn main() -> anyhow::Result<()> {
             remix: "z".to_string(),
             search_blob: "insertion manual 2026 z".to_string(),
             file_path: "".to_string(),
+            duration: 123,
         }])
         .await;
-    let searchable = vec!["2026"];
+
+    let searchable = vec!["2026", "man", "insertion"];
     let r = service.search_by(&songs, searchable, 1).await;
+    for s in r {
+        println!("Songs List: {:?}", s);
+    }
+
+    let searchable = vec!["2026", "man", "insertion"];
+    let r = service.search_by_db(searchable, 1).await;
+
     for s in r {
         println!("Songs List: {:?}", s);
     }
@@ -42,10 +51,8 @@ async fn main() -> anyhow::Result<()> {
 
 //TODO:
 // read modules and fix the smaller abomination
-// implement domain
+// implement domain (filters + settings + random)
 // remove all tests from main
-// high volume tests (done) -> compare sqlite vs vector
-// add settings
 // try local web?
 // add frontend
 // make tauri alternative

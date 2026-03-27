@@ -10,7 +10,7 @@ impl<R: SongRepository> SongService<R> {
     }
 
     pub async fn add_songs(&self, songs: Vec<Song>) {
-        self.repo.add_all(songs).await;
+        self.repo.add_all(songs).await
     }
 
     pub async fn list_songs(&self) -> Vec<Song> {
@@ -24,5 +24,9 @@ impl<R: SongRepository> SongService<R> {
         max_results: usize,
     ) -> Vec<Song> {
         self.repo.search_by(songs, search, max_results).await
+    }
+
+    pub async fn search_by_db(&self, words: Vec<&str>, max_results: i64) -> Vec<Song> {
+        self.repo.search_by_db(words, max_results).await
     }
 }

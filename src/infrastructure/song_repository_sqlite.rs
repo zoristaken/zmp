@@ -14,8 +14,8 @@ impl SongRepository for SqliteSongRepository {
     async fn add_all(&self, songs: Vec<Song>) {
         for val in songs {
             let _ = sqlx::query(
-            "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING;",
+            "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING;",
         )
         .bind(val.title)
         .bind(val.artist)
@@ -24,6 +24,7 @@ impl SongRepository for SqliteSongRepository {
         .bind(val.remix)
         .bind(val.search_blob)
         .bind(val.file_path)
+        .bind(val.duration)
         .execute(&self.db.pool)
         .await;
         }
@@ -31,7 +32,7 @@ impl SongRepository for SqliteSongRepository {
 
     async fn get_all(&self) -> Vec<Song> {
         sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path FROM song"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song"
             )
             .fetch_all(&self.db.pool)
             .await
@@ -56,5 +57,29 @@ impl SongRepository for SqliteSongRepository {
             .take(max_results)
             .cloned()
             .collect()
+    }
+
+    async fn search_by_db(&self, words: Vec<&str>, max_results: i64) -> Vec<Song> {
+        if words.len() == 0 {
+            return vec![];
+        }
+
+        let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE ",
+        );
+
+        for (i, word) in words.iter().enumerate() {
+            qb.push("search_blob LIKE ");
+            qb.push_bind(format!("%{}%", word));
+            if i != words.len() - 1 {
+                qb.push(" OR ");
+            }
+        }
+
+        qb.push(" LIMIT ");
+        qb.push_bind(max_results);
+
+        let query = qb.build_query_as::<Song>();
+        query.fetch_all(&self.db.pool).await.unwrap()
     }
 }

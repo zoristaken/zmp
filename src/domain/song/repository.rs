@@ -12,4 +12,5 @@ pub trait SongRepository {
         search: Vec<&str>,
         max_results: usize,
     ) -> Vec<Song>;
+    async fn search_by_db(&self, words: Vec<&str>, max_results: i64) -> Vec<Song>;
 }
