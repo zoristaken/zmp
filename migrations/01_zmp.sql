@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS song (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     title        TEXT NOT NULL,
-    artist       TEXT,
+    artist       TEXT NOT NULL,
     release_year INTEGER,
     album        TEXT,
     remix        TEXT,
@@ -11,27 +11,27 @@ CREATE TABLE IF NOT EXISTS song (
     UNIQUE(title, artist, remix)
 );
 
-CREATE TABLE IF NOT EXISTS filters
+CREATE TABLE IF NOT EXISTS filter
 (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                    TEXT,
+    name                    TEXT NOT NULL,
     UNIQUE(name)
 );
 
-CREATE TABLE IF NOT EXISTS song_filters
+CREATE TABLE IF NOT EXISTS song_filter
 (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    song_id                 INT,
-    filter_id               INT,
-    FOREIGN KEY (song_id)   REFERENCES song (id) ON UPDATE SET NULL ON DELETE SET NULL,
-    FOREIGN KEY (filter_id) REFERENCES filters (id) ON UPDATE SET NULL ON DELETE SET NULL,
+    song_id                 INT NOT NULL,
+    filter_id               INT NOT NULL,
+    FOREIGN KEY (song_id)   REFERENCES song (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (filter_id) REFERENCES filters (id) ON UPDATE CASCADE ON DELETE CASCADE,
     UNIQUE(song_id, filter_id)
 );
 
-CREATE TABLE IF NOT EXISTS settings
+CREATE TABLE IF NOT EXISTS setting
 (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    key     TEXT,
-    value   TEXT,
+    key     TEXT NOT NULL,
+    value   TEXT NOT NULL,
     UNIQUE(key, value)
 );
