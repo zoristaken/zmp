@@ -57,6 +57,6 @@ impl Config {
         fs::create_dir_all(&config_dir)
             .map_err(|e| anyhow!("Failed to create config directory: {}", e))?;
 
-        Ok(config_dir.to_string_lossy().into_owned())
+        Ok(config_dir.display().to_string())
     }
 }
