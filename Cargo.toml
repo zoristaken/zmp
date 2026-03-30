@@ -12,3 +12,5 @@ sqlx = { version = "0.8.6", features = [
   "migrate",
 ] }
 tokio = { version = "1", features = ["full"] }
+walkdir = "2.5.0"
+lofty = "0.23.3"

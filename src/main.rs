@@ -3,11 +3,13 @@ mod config;
 mod database;
 mod domain;
 mod infrastructure;
+mod metadata;
 
 use application::FilterService;
 use application::SettingService;
 use application::SongFilterService;
 use application::SongService;
+use domain::SongFilter;
 use infrastructure::SqliteFilterRepository;
 use infrastructure::SqliteSettingRepository;
 use infrastructure::SqliteSongFilterRepository;
@@ -15,12 +17,12 @@ use infrastructure::SqliteSongRepository;
 
 use std::{sync::Arc, time::Instant};
 
-use crate::domain::Song;
-use crate::domain::SongFilter;
+use config::Config;
+use metadata::MetadataParser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = config::Config::new()?;
+    let config = Config::new()?;
     let sqlite = Arc::new(database::SqliteDb::new(&config.database_url).await?);
     let song_repo = SqliteSongRepository::new(sqlite.clone());
     let setting_repo = SqliteSettingRepository::new(sqlite.clone());
@@ -32,51 +34,77 @@ async fn main() -> anyhow::Result<()> {
     let song_filter_service = SongFilterService::new(song_filter_repo);
 
     //testing for now
-    let songs = song_service.list_songs().await;
-    song_service
-        .add_songs(vec![Song {
-            id: 0,
-            title: "insertion".to_string(),
-            artist: "manual".to_string(),
-            album: "lazy".to_string(),
-            release_year: 2026,
-            remix: "z".to_string(),
-            search_blob: "insertion manual 2026 z".to_string(),
-            file_path: "".to_string(),
-            duration: 123,
-        }])
+    setting_service.set_music_folder_path("/home/z/Music").await;
+
+    setting_service
+        .set_random_play(!setting_service.is_random_play().await)
         .await;
 
-    let searchable = vec!["2026", "man", "insertion"];
-    let start = Instant::now();
-    let r = song_service.search_by(&songs, searchable, 1).await;
-    let duration = start.elapsed();
-    for s in r {
-        println!("Songs List: {:?}", s);
-    }
-    println!("{:?}", duration);
-
-    let searchable = vec!["2026", "man", "insertion"];
-    let start = Instant::now();
-    let r = song_service.search_by_db(searchable, 1).await;
-    let duration = start.elapsed();
-    for s in r {
-        println!("Songs List: {:?}", s);
-    }
-    println!("{:?}", duration);
-
-    setting_service.set("music_folder_path", "~/Music").await;
-
-    let r = setting_service.get("music_folder_path").await;
     println!(
-        "Found setting <id:{:?}, key:{:?}, value:{:?}>",
-        r.id, r.key, r.value
+        "set random play to:{}",
+        setting_service.is_random_play().await
     );
 
-    filter_service.set("trance").await;
-    filter_service.set("metal").await;
-    filter_service.set("oldschool").await;
-    filter_service.set("favorite").await;
+    setting_service.set_next_keybind("f3").await;
+    let next_kb = setting_service.get_next_keybind().await;
+    setting_service.set_previous_keybind("f1").await;
+    let previous_kb = setting_service.get_previous_keybind().await;
+    setting_service.set_play_stop_keybind("f2").await;
+    let play_kb = setting_service.get_play_stop_keybind().await;
+    setting_service.set_settings_keybind("f5").await;
+    let settings_kb = setting_service.get_settings_keybind().await;
+    setting_service.set_random_keybind("f4").await;
+    let random_kb = setting_service.get_random_keybind().await;
+
+    println!(
+        "KEYBINDS\nnext:{:?}\nprevious:{:?}\nplay/stop:{:?}\nsettings:{:?}\nrandom:{:?}",
+        next_kb, previous_kb, play_kb, settings_kb, random_kb
+    );
+
+    let r = setting_service.get_music_folder_path().await;
+    println!("Found music path setting: {:?}", r);
+
+    let metadata_parser = MetadataParser::new(song_service);
+
+    if !setting_service.has_processed_music_folder().await {
+        metadata_parser.parse_song_metadata(r.as_str()).await;
+        setting_service.set_processed_music_folder(true).await;
+    } else {
+        println!("already processed music folder")
+    }
+
+    let songs = metadata_parser.song_service.list_songs().await;
+    for s in &songs {
+        println!("All songs list: {:#?}", s);
+    }
+    //let searchable = vec!["tuvan"];
+    //let start = Instant::now();
+    //let r = metadata_parser
+    // .song_service
+    // .search_by(&songs, searchable, 5)
+    // .await;
+    // let duration = start.elapsed();
+    //for s in r {
+    //println!("1 Songs List: {:#?}", s);
+    //}
+    //println!("{:?}", duration);
+
+    //let searchable = vec!["tuvan"];
+    //let start = Instant::now();
+    // let r = metadata_parser
+    //     .song_service
+    //     .search_by_db(searchable, 5)
+    //     .await;
+    //let duration = start.elapsed();
+    //for s in r {
+    //println!("2 Songs List: {:#?}", s);
+    //}
+    //println!("{:?}", duration);
+
+    filter_service.add("trance").await;
+    filter_service.add("metal").await;
+    filter_service.add("oldschool").await;
+    filter_service.add("favorite").await;
 
     let r = filter_service.get_all().await;
     for s in r {
@@ -136,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
             s.id, s.filter_id, s.song_id
         );
     }
-    let r = song_filter_service.get_by_song(100001).await;
+    let r = song_filter_service.get_by_song(54).await;
     for s in r {
         println!(
             "Found song filter by song <id:{:?}, filter_id:{:?}, song_id:{:?}>",
@@ -149,7 +177,8 @@ async fn main() -> anyhow::Result<()> {
 //TODO:
 // read modules and fix the smaller abomination
 // implement domain (filters + settings + random) (just missing random, updates and deletes for basic crud)
-// remove all tests from main
+// move tests into actual tests (perhaps db mocks + actual dev db test)
+// add actual error logic + remove .unwrap()
 // try local web?
 // add frontend
 // make tauri alternative

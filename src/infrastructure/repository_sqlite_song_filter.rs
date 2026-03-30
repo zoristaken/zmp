@@ -36,7 +36,7 @@ impl SongFilterRepository for SqliteSongFilterRepository {
         }
     }
 
-    async fn get_by_id(&self, id: i64) -> SongFilter {
+    async fn get_by_id(&self, id: i32) -> SongFilter {
         sqlx::query_as::<sqlx::Sqlite, SongFilter>(
             "SELECT id, song_id, filter_id FROM song_filter WHERE id = ?",
         )
@@ -47,7 +47,7 @@ impl SongFilterRepository for SqliteSongFilterRepository {
     }
 
     //TODO: add filter_id index?
-    async fn get_by_filter(&self, filter_id: i64) -> Vec<SongFilter> {
+    async fn get_by_filter(&self, filter_id: i32) -> Vec<SongFilter> {
         sqlx::query_as::<sqlx::Sqlite, SongFilter>(
             "SELECT id, song_id, filter_id FROM song_filter WHERE filter_id = ?",
         )
@@ -58,7 +58,7 @@ impl SongFilterRepository for SqliteSongFilterRepository {
     }
 
     //TODO: add song_id index?
-    async fn get_by_song(&self, song_id: i64) -> Vec<SongFilter> {
+    async fn get_by_song(&self, song_id: i32) -> Vec<SongFilter> {
         sqlx::query_as::<sqlx::Sqlite, SongFilter>(
             "SELECT id, song_id, filter_id FROM song_filter WHERE song_id = ?",
         )

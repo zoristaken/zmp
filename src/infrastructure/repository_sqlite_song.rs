@@ -41,8 +41,7 @@ impl SongRepository for SqliteSongRepository {
             .unwrap()
     }
 
-    //TODO: change location - temporary for testing
-    //implement full sqlite alternative for comparison
+    //An in memory search alternative to the search_by_db query
     async fn search_by(
         &self,
         songs: &Vec<Song>,
@@ -61,7 +60,7 @@ impl SongRepository for SqliteSongRepository {
             .collect()
     }
 
-    async fn search_by_db(&self, words: Vec<&str>, max_results: i64) -> Vec<Song> {
+    async fn search_by_db(&self, words: Vec<&str>, max_results: i32) -> Vec<Song> {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE ",
         );

@@ -13,7 +13,7 @@ impl SqliteFilterRepository {
 }
 
 impl FilterRepository for SqliteFilterRepository {
-    async fn set(&self, name: &str) {
+    async fn add(&self, name: &str) {
         let _ = sqlx::query("INSERT INTO filter (name) VALUES ($1);")
             .bind(name)
             .execute(&self.db.pool)
@@ -35,7 +35,7 @@ impl FilterRepository for SqliteFilterRepository {
             .unwrap()
     }
 
-    async fn get_by_id(&self, filter_id: i64) -> Filter {
+    async fn get_by_id(&self, filter_id: i32) -> Filter {
         sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter WHERE id = ?")
             .bind(filter_id)
             .fetch_one(&self.db.pool)

@@ -21,11 +21,12 @@ impl SettingRepository for SqliteSettingRepository {
             .await;
     }
 
-    async fn get(&self, key: &str) -> Setting {
-        sqlx::query_as::<sqlx::Sqlite, Setting>("SELECT id, key, value FROM setting WHERE key = ?")
-            .bind(key)
-            .fetch_one(&self.db.pool)
-            .await
-            .unwrap()
+    async fn get(&self, key: &str) -> anyhow::Result<Setting> {
+        Ok(sqlx::query_as::<sqlx::Sqlite, Setting>(
+            "SELECT id, key, value FROM setting WHERE key = ?",
+        )
+        .bind(key)
+        .fetch_one(&self.db.pool)
+        .await?)
     }
 }
