@@ -1,4 +1,10 @@
-use super::SongFilter;
+#[allow(dead_code)]
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct SongFilter {
+    pub id: i32,
+    pub song_id: i32,
+    pub filter_id: i32,
+}
 
 pub trait SongFilterRepository: Send + Sync {
     async fn add(&self, song_filter: SongFilter);

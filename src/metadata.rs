@@ -1,3 +1,4 @@
+use crate::song::Song;
 use std::path::{Path, PathBuf};
 
 use lofty::{
@@ -7,11 +8,6 @@ use lofty::{
     tag::{Accessor, ItemKey, Tag, items::Timestamp},
 };
 use walkdir::WalkDir;
-
-use crate::{
-    application::SongService,
-    domain::{Song, SongRepository},
-};
 
 #[derive(Debug)]
 struct SongMetadata {
@@ -26,13 +22,11 @@ struct SongMetadata {
     remix: Option<String>,
 }
 
-pub struct MetadataParser<R: SongRepository> {
-    pub song_service: SongService<R>,
-}
+pub struct MetadataParser {}
 
-impl<R: SongRepository> MetadataParser<R> {
-    pub fn new(song_service: SongService<R>) -> Self {
-        Self { song_service }
+impl MetadataParser {
+    pub fn new() -> Self {
+        Self {}
     }
 
     fn read_metadata(file_path: &Path) -> anyhow::Result<SongMetadata> {
@@ -122,7 +116,7 @@ impl<R: SongRepository> MetadataParser<R> {
         Ok(song)
     }
 
-    pub async fn parse_song_metadata(&self, music_folder_path: &str) {
+    pub async fn parse_song_metadata(&self, music_folder_path: &str) -> Vec<Song> {
         let music_folder_abs: PathBuf =
             std::fs::canonicalize(music_folder_path).expect("Failed to canonicalize music folder");
 
@@ -171,6 +165,6 @@ impl<R: SongRepository> MetadataParser<R> {
                 }
             }
         }
-        self.song_service.add_songs(songs).await
+        songs
     }
 }

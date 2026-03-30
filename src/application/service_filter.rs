@@ -1,4 +1,4 @@
-use crate::domain::{Filter, FilterRepository};
+use crate::filter::{Filter, FilterRepository};
 
 pub struct FilterService<R: FilterRepository> {
     repo: R,

@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-use crate::domain::{Setting, SettingRepository};
+use crate::setting::{Setting, SettingRepository};
 
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";

@@ -1,4 +1,4 @@
-use crate::domain::{SongFilter, SongFilterRepository};
+use crate::song_filter::{SongFilter, SongFilterRepository};
 
 pub struct SongFilterService<R: SongFilterRepository> {
     repo: R,

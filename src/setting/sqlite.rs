@@ -1,5 +1,5 @@
 use crate::database::SqliteDb;
-use crate::domain::{Setting, SettingRepository};
+use crate::setting::{Setting, SettingRepository};
 use std::sync::Arc;
 
 pub struct SqliteSettingRepository {

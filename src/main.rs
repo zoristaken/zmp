@@ -1,24 +1,26 @@
 mod application;
 mod config;
 mod database;
-mod domain;
-mod infrastructure;
+mod filter;
 mod metadata;
+mod setting;
+mod song;
+mod song_filter;
 
 use application::FilterService;
 use application::SettingService;
 use application::SongFilterService;
 use application::SongService;
-use domain::SongFilter;
-use infrastructure::SqliteFilterRepository;
-use infrastructure::SqliteSettingRepository;
-use infrastructure::SqliteSongFilterRepository;
-use infrastructure::SqliteSongRepository;
-
-use std::{sync::Arc, time::Instant};
-
 use config::Config;
+use filter::SqliteFilterRepository;
 use metadata::MetadataParser;
+use setting::SqliteSettingRepository;
+use song::SqliteSongRepository;
+use song_filter::SqliteSongFilterRepository;
+
+use std::sync::Arc;
+
+use song_filter::SongFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -64,42 +66,32 @@ async fn main() -> anyhow::Result<()> {
     let r = setting_service.get_music_folder_path().await;
     println!("Found music path setting: {:?}", r);
 
-    let metadata_parser = MetadataParser::new(song_service);
+    let metadata_parser = MetadataParser::new();
 
     if !setting_service.has_processed_music_folder().await {
-        metadata_parser.parse_song_metadata(r.as_str()).await;
+        let songs = metadata_parser.parse_song_metadata(r.as_str()).await;
         setting_service.set_processed_music_folder(true).await;
+        song_service.add_songs(songs).await;
     } else {
         println!("already processed music folder")
     }
 
-    let songs = metadata_parser.song_service.list_songs().await;
+    let songs = song_service.list_songs().await;
     for s in &songs {
         println!("All songs list: {:#?}", s);
     }
-    //let searchable = vec!["tuvan"];
-    //let start = Instant::now();
-    //let r = metadata_parser
-    // .song_service
-    // .search_by(&songs, searchable, 5)
-    // .await;
-    // let duration = start.elapsed();
-    //for s in r {
-    //println!("1 Songs List: {:#?}", s);
-    //}
-    //println!("{:?}", duration);
+    let searchable = vec!["tuvan"];
 
-    //let searchable = vec!["tuvan"];
-    //let start = Instant::now();
-    // let r = metadata_parser
-    //     .song_service
-    //     .search_by_db(searchable, 5)
-    //     .await;
-    //let duration = start.elapsed();
-    //for s in r {
-    //println!("2 Songs List: {:#?}", s);
-    //}
-    //println!("{:?}", duration);
+    let r = song_service.search_by(&songs, searchable, 5).await;
+    for s in r {
+        println!("1 Songs List: {:#?}", s);
+    }
+
+    let searchable = vec!["tuvan"];
+    let r = song_service.search_by_db(searchable, 5).await;
+    for s in r {
+        println!("2 Songs List: {:#?}", s);
+    }
 
     filter_service.add("trance").await;
     filter_service.add("metal").await;
@@ -108,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
 
     let r = filter_service.get_all().await;
     for s in r {
-        println!("Found all filter <id:{:?}, name:{:?}", s.id, s.name);
+        println!("Found all filter <id:{:?}, name:{:?}>", s.id, s.name);
     }
 
     let r = filter_service.get_by_name("favorite").await;

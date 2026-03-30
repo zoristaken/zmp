@@ -1,5 +1,5 @@
 use crate::database::SqliteDb;
-use crate::domain::{SongFilter, SongFilterRepository};
+use crate::song_filter::{SongFilter, SongFilterRepository};
 use std::sync::Arc;
 
 pub struct SqliteSongFilterRepository {
