@@ -17,6 +17,10 @@ impl<R: SongRepository> SongService<R> {
         self.repo.get_all().await
     }
 
+    pub async fn get_by_id(&self, id: i32) -> Song {
+        self.repo.get_by_id(id).await
+    }
+
     pub async fn search_by(
         &self,
         songs: &Vec<Song>,

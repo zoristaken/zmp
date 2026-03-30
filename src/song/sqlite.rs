@@ -81,4 +81,14 @@ impl SongRepository for SqliteSongRepository {
         let query = qb.build_query_as::<Song>();
         query.fetch_all(&self.db.pool).await.unwrap()
     }
+
+    async fn get_by_id(&self, id: i32) -> Song {
+        sqlx::query_as::<sqlx::Sqlite, Song>(
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE id = ?"
+            )
+            .bind(id)
+            .fetch_one(&self.db.pool)
+            .await
+            .unwrap()
+    }
 }

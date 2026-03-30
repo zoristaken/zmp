@@ -10,6 +10,7 @@ const WINDOWS_DEFAULT_PATH: &str = "APPDATA";
 const MAC_DEFAULT_PATH: &str = "Library/Application Support";
 const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
 const LINUX_CONFIG: &str = ".config";
+pub const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {

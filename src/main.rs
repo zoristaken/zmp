@@ -3,6 +3,7 @@ mod config;
 mod database;
 mod filter;
 mod metadata;
+mod player;
 mod setting;
 mod song;
 mod song_filter;
@@ -68,6 +69,8 @@ async fn main() -> anyhow::Result<()> {
 
     let metadata_parser = MetadataParser::new();
 
+    //TODO: generalize the db and executor so we can pass the pool into different services
+    //to allow for transaction commits across services/database tables queries
     if !setting_service.has_processed_music_folder().await {
         let songs = metadata_parser.parse_song_metadata(r.as_str()).await;
         setting_service.set_processed_music_folder(true).await;
@@ -80,18 +83,27 @@ async fn main() -> anyhow::Result<()> {
     for s in &songs {
         println!("All songs list: {:#?}", s);
     }
-    let searchable = vec!["tuvan"];
+    // let searchable = vec!["tuvan"];
 
-    let r = song_service.search_by(&songs, searchable, 5).await;
-    for s in r {
-        println!("1 Songs List: {:#?}", s);
-    }
+    // let r = song_service.search_by(&songs, searchable, 5).await;
+    // for s in r {
+    //     println!("1 Songs List: {:#?}", s);
+    // }
 
     let searchable = vec!["tuvan"];
-    let r = song_service.search_by_db(searchable, 5).await;
+    let r = song_service.search_by_db(searchable, 1).await;
     for s in r {
         println!("2 Songs List: {:#?}", s);
+        println!(
+            "playing {:?} by {:?} for {:?} seconds",
+            s.title, s.artist, s.duration
+        );
+        let _ = player::Player::play(&s.file_path);
+        println!("finished song")
     }
+
+    let r = song_service.get_by_id(1).await;
+    let _ = player::Player::play(&r.file_path);
 
     filter_service.add("trance").await;
     filter_service.add("metal").await;
@@ -167,10 +179,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 //TODO:
-// read modules and fix the smaller abomination
-// implement domain (filters + settings + random) (just missing random, updates and deletes for basic crud)
+// read modules
 // move tests into actual tests (perhaps db mocks + actual dev db test)
 // add actual error logic + remove .unwrap()
+// check transaction TODO
 // try local web?
 // add frontend
 // make tauri alternative

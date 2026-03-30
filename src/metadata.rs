@@ -1,4 +1,4 @@
-use crate::song::Song;
+use crate::{config::SUPPORTED_EXTENSIONS, song::Song};
 use std::path::{Path, PathBuf};
 
 use lofty::{
@@ -129,7 +129,7 @@ impl MetadataParser {
             let path = entry.path();
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                 let ext = ext.to_lowercase();
-                if ["mp3", "flac", "m4a", "ogg", "wav"].contains(&ext.as_str()) {
+                if SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
                     if let Some(metadata) = Self::read_metadata(path).ok() {
                         let m_title = metadata.title;
                         let m_artist = metadata.artist;

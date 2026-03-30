@@ -14,6 +14,7 @@ pub struct Song {
 pub trait SongRepository: Send + Sync {
     async fn add_all(&self, songs: Vec<Song>);
     async fn get_all(&self) -> Vec<Song>;
+    async fn get_by_id(&self, id: i32) -> Song;
     async fn search_by(
         &self,
         songs: &Vec<Song>,
