@@ -1,5 +1,8 @@
 use anyhow::Context;
-use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
+use sqlx::{
+    SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
+};
 use std::str::FromStr;
 
 pub struct SqliteDb {
@@ -12,7 +15,9 @@ impl SqliteDb {
             SqliteConnectOptions::from_str(path)
                 .with_context(|| format!("invalid database path {}", path))?
                 .create_if_missing(true)
-                .pragma("foreign_keys", "ON"),
+                .foreign_keys(true)
+                .journal_mode(SqliteJournalMode::Wal)
+                .synchronous(SqliteSynchronous::Normal),
         )
         .await
         .with_context(|| format!("failed to open database at {}", path))?;

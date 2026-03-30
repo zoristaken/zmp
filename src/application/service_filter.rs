@@ -9,8 +9,8 @@ impl<R: FilterRepository> FilterService<R> {
         Self { repo }
     }
 
-    pub async fn set(&self, name: &str) {
-        self.repo.set(name).await;
+    pub async fn add(&self, name: &str) {
+        self.repo.add(name).await;
     }
 
     pub async fn get_all(&self) -> Vec<Filter> {
@@ -21,7 +21,7 @@ impl<R: FilterRepository> FilterService<R> {
         self.repo.get_by_name(name).await
     }
 
-    pub async fn get_by_id(&self, filter_id: i64) -> Filter {
+    pub async fn get_by_id(&self, filter_id: i32) -> Filter {
         self.repo.get_by_id(filter_id).await
     }
 }

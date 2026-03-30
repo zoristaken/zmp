@@ -21,15 +21,15 @@ impl<R: SongFilterRepository> SongFilterService<R> {
         self.repo.get_all().await
     }
 
-    pub async fn get_by_id(&self, id: i64) -> SongFilter {
+    pub async fn get_by_id(&self, id: i32) -> SongFilter {
         self.repo.get_by_id(id).await
     }
 
-    pub async fn get_by_filter(&self, filter_id: i64) -> Vec<SongFilter> {
+    pub async fn get_by_filter(&self, filter_id: i32) -> Vec<SongFilter> {
         self.repo.get_by_filter(filter_id).await
     }
 
-    pub async fn get_by_song(&self, song_id: i64) -> Vec<SongFilter> {
+    pub async fn get_by_song(&self, song_id: i32) -> Vec<SongFilter> {
         self.repo.get_by_song(song_id).await
     }
 }
