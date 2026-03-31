@@ -1,10 +1,10 @@
-use std::{error::Error, io::BufReader};
+use std::io::BufReader;
 
 pub struct Player {}
 
 impl Player {
     //testing functionality for now
-    pub fn play(file_path: &str) -> Result<(), Box<dyn Error>> {
+    pub fn play(file_path: &str) -> anyhow::Result<()> {
         let stream_handle = rodio::DeviceSinkBuilder::open_default_sink()?;
         let mixer = stream_handle.mixer();
 

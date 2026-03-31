@@ -1,13 +1,12 @@
 use crate::database::SqliteDb;
 use crate::setting::{Setting, SettingRepository};
-use std::sync::Arc;
 
 pub struct SqliteSettingRepository {
-    db: Arc<SqliteDb>,
+    db: SqliteDb,
 }
 
 impl SqliteSettingRepository {
-    pub fn new(db: Arc<SqliteDb>) -> Self {
+    pub fn new(db: SqliteDb) -> Self {
         Self { db }
     }
 }

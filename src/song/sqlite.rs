@@ -1,13 +1,12 @@
 use crate::database::SqliteDb;
 use crate::song::{Song, SongRepository};
-use std::sync::Arc;
 
 pub struct SqliteSongRepository {
-    db: Arc<SqliteDb>,
+    db: SqliteDb,
 }
 
 impl SqliteSongRepository {
-    pub fn new(db: Arc<SqliteDb>) -> Self {
+    pub fn new(db: SqliteDb) -> Self {
         Self { db }
     }
 }

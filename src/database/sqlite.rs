@@ -5,12 +5,13 @@ use sqlx::{
 };
 use std::str::FromStr;
 
+#[derive(Clone)]
 pub struct SqliteDb {
     pub pool: SqlitePool,
 }
 
 impl SqliteDb {
-    pub async fn new(path: &str) -> Result<SqliteDb, anyhow::Error> {
+    pub async fn new(path: &str) -> anyhow::Result<SqliteDb> {
         let pool = SqlitePool::connect_with(
             SqliteConnectOptions::from_str(path)
                 .with_context(|| format!("invalid database path {}", path))?

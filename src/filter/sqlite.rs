@@ -1,13 +1,12 @@
 use crate::database::SqliteDb;
 use crate::filter::{Filter, FilterRepository};
-use std::sync::Arc;
 
 pub struct SqliteFilterRepository {
-    db: Arc<SqliteDb>,
+    db: SqliteDb,
 }
 
 impl SqliteFilterRepository {
-    pub fn new(db: Arc<SqliteDb>) -> Self {
+    pub fn new(db: SqliteDb) -> Self {
         Self { db }
     }
 }
