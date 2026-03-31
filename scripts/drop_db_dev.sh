@@ -1,7 +1,7 @@
 #!/bin/bash
 
 HOME_DIR="${HOME:-$(getent passwd "$(whoami)" | cut -d: -f6)}"
-TARGET_FILE="$HOME_DIR/.config/zmp/zmp_dev.db"
+TARGET_FILE="$HOME_DIR/.local/share/zmp/zmp_dev.db"
 
 if [ -f "$TARGET_FILE" ]; then
     rm "$TARGET_FILE"

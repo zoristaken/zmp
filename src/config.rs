@@ -8,8 +8,8 @@ const APP_NAME_DEV: &str = "zmp_dev";
 const HOME: &str = "HOME";
 const WINDOWS_DEFAULT_PATH: &str = "APPDATA";
 const MAC_DEFAULT_PATH: &str = "Library/Application Support";
-const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
-const LINUX_CONFIG: &str = ".config";
+const XDG_DATA_HOME: &str = "X$XDG_DATA_HOMEE";
+const LINUX_LOCAL: &str = ".local/share";
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,9 +47,9 @@ impl Config {
                 .map_err(|_| anyhow!("{} environment variable not set", HOME))?,
             _ => {
                 // Linux/Unix
-                env::var(XDG_CONFIG_HOME)
+                env::var(XDG_DATA_HOME)
                     .map(PathBuf::from)
-                    .or_else(|_| env::var(HOME).map(|h| PathBuf::from(h).join(LINUX_CONFIG)))
+                    .or_else(|_| env::var(HOME).map(|h| PathBuf::from(h).join(LINUX_LOCAL)))
                     .map_err(|_| anyhow!("Could not determine config directory"))?
             }
         }
