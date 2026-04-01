@@ -119,6 +119,11 @@ impl MetadataParser {
             }
         }
 
+        println!(
+            "parsing fallback hit! title:{:?} artist:{:?}",
+            song.title, song.artist
+        );
+
         Ok(song)
     }
 

@@ -25,31 +25,23 @@ impl Player {
         Ok(())
     }
 }
-
-pub trait PlayerRepository:
-    SettingRepository + SongRepository + FilterRepository + SongFilterRepository
-{
-}
-
-impl<T> PlayerRepository for T where
-    T: SettingRepository + SongRepository + FilterRepository + SongFilterRepository
-{
-}
-
-pub struct PlayerService<R>
+pub struct PlayerService<S, So, F, Sf>
 where
-    R: PlayerRepository,
+    S: SettingRepository,
+    So: SongRepository,
+    F: FilterRepository,
+    Sf: SongFilterRepository,
 {
-    pub setting: SettingService<R>,
-    pub song: SongService<R>,
-    pub filter: FilterService<R>,
-    pub song_filter: SongFilterService<R>,
+    pub setting: SettingService<S>,
+    pub song: SongService<So>,
+    pub filter: FilterService<F>,
+    pub song_filter: SongFilterService<Sf>,
     pub metadata_parser: MetadataParser,
 }
 
-impl<R> PlayerService<R>
+impl<R> PlayerService<R, R, R, R>
 where
-    R: PlayerRepository + Clone,
+    R: SettingRepository + SongRepository + FilterRepository + SongFilterRepository + Clone,
 {
     pub fn new(repos: R) -> Self {
         Self {
