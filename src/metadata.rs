@@ -1,9 +1,13 @@
 use crate::{config::SUPPORTED_EXTENSIONS, song::Song};
 use std::path::{Path, PathBuf};
 
+use id3::TagLike;
+use lofty::file::AudioFile;
+use lofty::tag::TagType;
+
 use lofty::{
     config::ParsingMode,
-    file::{AudioFile, TaggedFileExt},
+    file::TaggedFileExt,
     probe::Probe,
     tag::{Accessor, ItemKey, Tag, items::Timestamp},
 };
@@ -51,14 +55,20 @@ impl MetadataParser {
         };
 
         let properties = tagged_file.properties();
-
         song.album = tag.album().map(|s| s.into_owned());
         song.artist = tag.artist().map(|s| s.into_owned()).unwrap_or_default();
         song.title = tag.title().map(|s| s.into_owned()).unwrap_or_default();
         song.genre = tag.genre().map(|s| s.into_owned());
-        song.year = Self::get_date(tag);
         song.remix = tag.get_string(ItemKey::Remixer).map(|s| s.to_string());
+        song.year = Self::get_date(tag);
         song.duration = properties.duration().as_secs();
+
+        if song.year.unwrap_or_default() == 0 && tag.tag_type() == TagType::Id3v2
+            || tag.tag_type() == TagType::Id3v1
+        {
+            let tag = id3::Tag::read_from_path(file_path)?;
+            song.year = tag.year();
+        }
 
         // If we filled artist and song, we are done
         if song.title != "" && song.artist != "" {
