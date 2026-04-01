@@ -33,5 +33,5 @@ CREATE TABLE IF NOT EXISTS setting
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     key     TEXT NOT NULL,
     value   TEXT NOT NULL,
-    UNIQUE(key, value)
+    UNIQUE(key)
 );

@@ -2,12 +2,15 @@ use anyhow::Context;
 
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
+const SAVED_VOLUME_VALUE: &str = "saved_volume_value";
+const SAVED_SEARCH_BLOB: &str = "saved_search_blob";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
 const SETTINGS_KEYBIND: &str = "settings_kb";
 const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
 const RANDOM_KEYBIND: &str = "random_kb";
+const DEFAULT_VOLUME: rodio::Float = 0.5;
 
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
@@ -40,6 +43,34 @@ impl<R: SettingRepository> SettingService<R> {
 
     pub async fn set_music_folder_path(&self, path: &str) {
         self.set(MUSIC_FOLDER_PATH_KEY, path).await;
+    }
+
+    pub async fn get_saved_search_blob(&self) -> anyhow::Result<String> {
+        let setting = self
+            .get(SAVED_SEARCH_BLOB)
+            .await
+            .with_context(|| format!("Failed to get {} value", SAVED_SEARCH_BLOB))?;
+
+        Ok(setting.value)
+    }
+
+    pub async fn set_saved_search_blob(&self, search_blob: &str) {
+        self.set(SAVED_SEARCH_BLOB, search_blob).await;
+    }
+
+    pub async fn get_saved_volume_value(&self) -> rodio::Float {
+        match self.get(SAVED_VOLUME_VALUE).await {
+            Ok(setting) => setting
+                .value
+                .parse::<rodio::Float>()
+                .unwrap_or(DEFAULT_VOLUME),
+            Err(_) => DEFAULT_VOLUME,
+        }
+    }
+
+    pub async fn set_saved_volume_value(&self, volume: rodio::Float) {
+        self.set(SAVED_VOLUME_VALUE, volume.to_string().as_str())
+            .await;
     }
 
     pub async fn set_processed_music_folder(&self, flag: bool) {
