@@ -95,7 +95,7 @@ impl SongRepository for SqliteDb {
             qb.push("search_blob LIKE ");
             qb.push_bind(format!("%{}%", word));
             if i != words.len() - 1 {
-                qb.push(" OR ");
+                qb.push(" AND ");
             }
         }
 
@@ -111,6 +111,17 @@ impl SongRepository for SqliteDb {
         "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE id = ?"
             )
             .bind(id)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    async fn get_by_title_artist(&self, title: String, artist: String) -> Song {
+        sqlx::query_as::<sqlx::Sqlite, Song>(
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE title = ? AND artist = ?"
+            )
+            .bind(title)
+            .bind(artist)
             .fetch_one(&self.pool)
             .await
             .unwrap()
@@ -215,11 +226,11 @@ impl SongFilterRepository for SqliteDb {
 
 impl SettingRepository for SqliteDb {
     async fn set(&self, key: &str, value: &str) {
-        let _ = sqlx::query("INSERT INTO setting (key, value) VALUES ($1, $2);")
-            .bind(key)
-            .bind(value)
-            .execute(&self.pool)
-            .await;
+        let _ = sqlx::query("INSERT INTO setting (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = ($2) WHERE key = ($1);")
+                    .bind(key)
+                    .bind(value)
+                    .execute(&self.pool)
+                    .await;
     }
 
     async fn get(&self, key: &str) -> anyhow::Result<Setting> {

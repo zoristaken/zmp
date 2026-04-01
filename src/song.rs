@@ -15,6 +15,7 @@ pub trait SongRepository: Send + Sync {
     async fn add_all(&self, songs: Vec<Song>);
     async fn get_all(&self) -> Vec<Song>;
     async fn get_by_id(&self, id: i32) -> Song;
+    async fn get_by_title_artist(&self, title: String, artist: String) -> Song;
     async fn search_by(
         &self,
         songs: &Vec<Song>,
@@ -43,6 +44,10 @@ impl<R: SongRepository> SongService<R> {
 
     pub async fn get_by_id(&self, id: i32) -> Song {
         self.repo.get_by_id(id).await
+    }
+
+    pub async fn get_by_title_artist(&self, title: String, artist: String) -> Song {
+        self.repo.get_by_title_artist(title, artist).await
     }
 
     pub async fn search_by(
