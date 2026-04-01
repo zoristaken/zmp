@@ -2903,6 +2903,7 @@ dependencies = [
  "anyhow",
  "id3",
  "lofty",
+ "rand 0.10.0",
  "rodio",
  "sqlx",
  "tokio",

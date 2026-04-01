@@ -8,17 +8,23 @@ use crate::{
     song_filter::{SongFilterRepository, SongFilterService},
 };
 
-pub struct Player {}
+struct Player {}
 
 impl Player {
+    pub fn new() -> Self {
+        Self {}
+    }
+
     //testing functionality for now
-    pub fn play(file_path: &str) -> anyhow::Result<()> {
+    pub fn play(&self, file_path: &str, volume: rodio::Float) -> anyhow::Result<()> {
         let stream_handle = rodio::DeviceSinkBuilder::open_default_sink()?;
         let mixer = stream_handle.mixer();
 
         let file = std::fs::File::open(file_path)?;
         let player = rodio::play(mixer, BufReader::new(file))?;
-        player.set_volume(0.5);
+        player.set_volume(volume);
+
+        println!("playing with volume of {:?}", volume);
 
         player.play();
         player.sleep_until_end();
@@ -37,6 +43,7 @@ where
     pub filter: FilterService<F>,
     pub song_filter: SongFilterService<Sf>,
     pub metadata_parser: MetadataParser,
+    player: Player,
 }
 
 impl<R> PlayerService<R, R, R, R>
@@ -50,6 +57,7 @@ where
             filter: FilterService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
+            player: Player::new(),
         }
     }
 
@@ -68,5 +76,16 @@ where
         } else {
             println!("already processed music folder")
         }
+    }
+
+    pub async fn play(&self, file_path: &str, volume: rodio::Float) -> anyhow::Result<()> {
+        if volume == 0.0 {
+            let saved_volume = self.setting.get_saved_volume_value().await;
+            self.player.play(file_path, saved_volume)?;
+            return Ok(());
+        }
+
+        self.player.play(file_path, volume)?;
+        Ok(())
     }
 }

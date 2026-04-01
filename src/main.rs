@@ -8,6 +8,7 @@ mod song_filter;
 mod sqlite;
 
 use config::Config;
+use rand::prelude::*;
 use song_filter::SongFilter;
 
 #[tokio::main]
@@ -52,30 +53,53 @@ async fn main() -> anyhow::Result<()> {
     player_service.process_music_folder().await;
 
     let songs = player_service.song.list_songs().await;
+    let mut rng = rand::rng();
+
+    let id = rng.random_range(1..songs.len());
+
     for s in &songs {
         println!("All songs list: {:#?}", s);
     }
-    let searchable = vec!["tuvan"];
-
-    let r = player_service.song.search_by(&songs, searchable, 5).await;
+    let searchable = vec!["gaia", "2017"];
+    let r = player_service.song.search_by(&songs, searchable, 10).await;
     for s in r {
         println!("1 Songs List: {:#?}", s);
     }
 
-    let searchable = vec!["tuvan"];
-    let r = player_service.song.search_by_db(searchable, 1).await;
+    let searchable = vec!["gaia", "2017"];
+    let r = player_service.song.search_by_db(searchable, 10).await;
     for s in r {
         println!("2 Songs List: {:#?}", s);
-        println!(
-            "playing {:?} by {:?} for {:?} seconds",
-            s.title, s.artist, s.duration
-        );
-        let _ = player::Player::play(&s.file_path);
-        println!("finished song")
     }
 
-    let r = player_service.song.get_by_id(1).await;
-    let _ = player::Player::play(&r.file_path);
+    let _ = player_service
+        .song
+        .get_by_title_artist("Sanctuary (Opening)".to_string(), "Utada".to_string());
+
+    player_service
+        .setting
+        .set_saved_search_blob("gaia 2017")
+        .await;
+
+    let blob = player_service.setting.get_saved_search_blob().await?;
+    println!("db saved search blob: {:?}", blob);
+
+    player_service.setting.set_saved_volume_value(0.3).await;
+
+    let saved_volume = player_service.setting.get_saved_volume_value().await;
+    println!("saved volume variable: {:?}", saved_volume);
+
+    let _ = player_service.song.get_by_id(id as i32).await;
+
+    let r = player_service
+        .song
+        .search_by_db(blob.split_whitespace().collect(), 1)
+        .await;
+
+    let _ = player_service
+        .play(r.first().unwrap().file_path.as_str(), saved_volume)
+        .await;
+    println!("finished song");
 
     player_service.filter.add("trance").await;
     player_service.filter.add("metal").await;
