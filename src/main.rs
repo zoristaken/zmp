@@ -34,6 +34,16 @@ async fn main() -> anyhow::Result<()> {
         player_service.setting.is_random_play().await
     );
 
+    player_service
+        .setting
+        .set_repeat_flag(!player_service.setting.is_repeat_flag().await)
+        .await;
+
+    println!(
+        "set repeat play to:{}",
+        player_service.setting.is_repeat_flag().await
+    );
+
     player_service.setting.set_next_keybind("f3").await;
     let next_kb = player_service.setting.get_next_keybind().await;
     player_service.setting.set_previous_keybind("f1").await;
@@ -57,16 +67,16 @@ async fn main() -> anyhow::Result<()> {
 
     let id = rng.random_range(1..songs.len());
 
-    for s in &songs {
-        println!("All songs list: {:#?}", s);
-    }
-    let searchable = vec!["gaia", "2017"];
+    // for s in &songs {
+    //     println!("All songs list: {:#?}", s);
+    // }
+    let searchable = vec!["left", "behind"];
     let r = player_service.song.search_by(&songs, searchable, 10).await;
     for s in r {
         println!("1 Songs List: {:#?}", s);
     }
 
-    let searchable = vec!["gaia", "2017"];
+    let searchable = vec!["left", "behind"];
     let r = player_service.song.search_by_db(searchable, 10).await;
     for s in r {
         println!("2 Songs List: {:#?}", s);
@@ -78,13 +88,13 @@ async fn main() -> anyhow::Result<()> {
 
     player_service
         .setting
-        .set_saved_search_blob("gaia 2017")
+        .set_saved_search_blob("left behind")
         .await;
 
     let blob = player_service.setting.get_saved_search_blob().await?;
     println!("db saved search blob: {:?}", blob);
 
-    player_service.setting.set_saved_volume_value(0.3).await;
+    player_service.setting.set_saved_volume_value(0.7).await;
 
     let saved_volume = player_service.setting.get_saved_volume_value().await;
     println!("saved volume variable: {:?}", saved_volume);

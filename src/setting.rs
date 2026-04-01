@@ -2,8 +2,9 @@ use anyhow::Context;
 
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
-const SAVED_VOLUME_VALUE: &str = "saved_volume_value";
-const SAVED_SEARCH_BLOB: &str = "saved_search_blob";
+const VOLUME_VALUE: &str = "volume_value";
+const SEARCH_BLOB: &str = "search_blob";
+const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
 const SETTINGS_KEYBIND: &str = "settings_kb";
 const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
@@ -45,21 +46,41 @@ impl<R: SettingRepository> SettingService<R> {
         self.set(MUSIC_FOLDER_PATH_KEY, path).await;
     }
 
+    pub async fn set_repeat_flag(&self, flag: bool) {
+        if flag {
+            self.set(REPEAT_FLAG, "true").await
+        } else {
+            self.set(REPEAT_FLAG, "false").await
+        }
+    }
+
+    pub async fn is_repeat_flag(&self) -> bool {
+        match self.get(REPEAT_FLAG).await {
+            Ok(setting) => {
+                if setting.value == "true" {
+                    return true;
+                }
+                return false;
+            }
+            Err(_) => return false,
+        };
+    }
+
     pub async fn get_saved_search_blob(&self) -> anyhow::Result<String> {
         let setting = self
-            .get(SAVED_SEARCH_BLOB)
+            .get(SEARCH_BLOB)
             .await
-            .with_context(|| format!("Failed to get {} value", SAVED_SEARCH_BLOB))?;
+            .with_context(|| format!("Failed to get {} value", SEARCH_BLOB))?;
 
         Ok(setting.value)
     }
 
     pub async fn set_saved_search_blob(&self, search_blob: &str) {
-        self.set(SAVED_SEARCH_BLOB, search_blob).await;
+        self.set(SEARCH_BLOB, search_blob).await;
     }
 
     pub async fn get_saved_volume_value(&self) -> rodio::Float {
-        match self.get(SAVED_VOLUME_VALUE).await {
+        match self.get(VOLUME_VALUE).await {
             Ok(setting) => setting
                 .value
                 .parse::<rodio::Float>()
@@ -69,8 +90,7 @@ impl<R: SettingRepository> SettingService<R> {
     }
 
     pub async fn set_saved_volume_value(&self, volume: rodio::Float) {
-        self.set(SAVED_VOLUME_VALUE, volume.to_string().as_str())
-            .await;
+        self.set(VOLUME_VALUE, volume.to_string().as_str()).await;
     }
 
     pub async fn set_processed_music_folder(&self, flag: bool) {
@@ -86,9 +106,8 @@ impl<R: SettingRepository> SettingService<R> {
             Ok(setting) => {
                 if setting.value == "true" {
                     return true;
-                } else {
-                    return false;
                 }
+                return false;
             }
             Err(_) => return false,
         };

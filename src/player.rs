@@ -86,6 +86,13 @@ where
         }
 
         self.player.play(file_path, volume)?;
-        Ok(())
+
+        if !self.setting.is_repeat_flag().await {
+            return Ok(());
+        }
+
+        loop {
+            self.player.play(file_path, volume)?;
+        }
     }
 }
