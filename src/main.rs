@@ -1,34 +1,22 @@
-mod application;
 mod config;
-mod database;
 mod filter;
 mod metadata;
 mod player;
 mod setting;
 mod song;
 mod song_filter;
+mod sqlite;
 
 use config::Config;
-use filter::SqliteFilterRepository;
-use setting::SqliteSettingRepository;
-use song::SqliteSongRepository;
-use song_filter::SqliteSongFilterRepository;
-
 use song_filter::SongFilter;
-
-use crate::application::PlayerService;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = Config::new()?;
-    let sqlite = database::SqliteDb::new(&config.database_url).await?;
-    let song_repo = SqliteSongRepository::new(sqlite.clone());
-    let setting_repo = SqliteSettingRepository::new(sqlite.clone());
-    let filter_repo = SqliteFilterRepository::new(sqlite.clone());
-    let song_filter_repo = SqliteSongFilterRepository::new(sqlite.clone());
+    let sqlite = sqlite::SqliteDb::new(&config.database_url).await?;
 
     //testing for now
-    let player_service = PlayerService::new(setting_repo, song_repo, filter_repo, song_filter_repo);
+    let player_service = player::PlayerService::new(sqlite);
 
     player_service
         .setting

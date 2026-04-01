@@ -1,7 +1,5 @@
 use anyhow::Context;
 
-use crate::setting::{Setting, SettingRepository};
-
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
@@ -10,6 +8,19 @@ const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
 const RANDOM_KEYBIND: &str = "random_kb";
+
+#[allow(dead_code)]
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct Setting {
+    pub id: i32,
+    pub key: String,
+    pub value: String,
+}
+
+pub trait SettingRepository: Send + Sync {
+    async fn set(&self, key: &str, value: &str);
+    async fn get(&self, key: &str) -> anyhow::Result<Setting>;
+}
 
 pub struct SettingService<R: SettingRepository> {
     repo: R,
