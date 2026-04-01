@@ -14,8 +14,7 @@ struct SongMetadata {
     title: String,
     artist: String,
     album: Option<String>,
-    track: Option<u32>,
-    year: Option<u16>,
+    year: Option<i32>,
     genre: Option<String>,
     path: String,
     duration: u64,
@@ -34,7 +33,6 @@ impl MetadataParser {
             title: "".to_string(),
             artist: "".to_string(),
             album: None,
-            track: None,
             year: None,
             genre: None,
             remix: None,
@@ -58,7 +56,6 @@ impl MetadataParser {
         song.artist = tag.artist().map(|s| s.into_owned()).unwrap_or_default();
         song.title = tag.title().map(|s| s.into_owned()).unwrap_or_default();
         song.genre = tag.genre().map(|s| s.into_owned());
-        song.track = tag.track();
         song.year = Self::get_date(tag);
         song.remix = tag.get_string(ItemKey::Remixer).map(|s| s.to_string());
         song.duration = properties.duration().as_secs();
@@ -71,7 +68,7 @@ impl MetadataParser {
         Self::parse_filename_fallback(file_path, song.duration)
     }
 
-    fn get_date(tag: &Tag) -> Option<u16> {
+    fn get_date(tag: &Tag) -> Option<i32> {
         let t = tag
             .get_string(ItemKey::RecordingDate)
             .or_else(|| tag.get_string(ItemKey::Year))
@@ -84,7 +81,7 @@ impl MetadataParser {
             })?
             .year;
 
-        Some(t)
+        Some(t.into())
     }
 
     fn parse_filename_fallback(file_path: &Path, duration: u64) -> anyhow::Result<SongMetadata> {
@@ -92,7 +89,6 @@ impl MetadataParser {
             title: "".to_string(),
             artist: "".to_string(),
             album: None,
-            track: None,
             year: None,
             genre: None,
             remix: None,
@@ -134,7 +130,7 @@ impl MetadataParser {
                         let m_title = metadata.title;
                         let m_artist = metadata.artist;
                         let m_album = metadata.album.unwrap_or_default();
-                        let m_release_year = metadata.year.unwrap_or_default() as i16;
+                        let m_release_year = metadata.year.unwrap_or_default();
                         let m_remix = metadata.remix.unwrap_or_default();
 
                         let search_blob = [

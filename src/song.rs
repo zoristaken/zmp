@@ -4,7 +4,7 @@ pub struct Song {
     pub id: i32,
     pub title: String,
     pub artist: String,
-    pub release_year: i16,
+    pub release_year: i32,
     pub album: String,
     pub remix: String,
     pub search_blob: String,
