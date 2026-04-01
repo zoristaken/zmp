@@ -51,17 +51,21 @@ impl MetadataParser {
 
         let tag = match tagged_file.primary_tag() {
             Some(primary_tag) => primary_tag,
-            None => tagged_file.first_tag().expect("ERROR: No tags found!"),
+            None => {
+                return Self::parse_filename_fallback(
+                    file_path,
+                    tagged_file.properties().duration().as_secs(),
+                );
+            }
         };
 
-        let properties = tagged_file.properties();
         song.album = tag.album().map(|s| s.into_owned());
         song.artist = tag.artist().map(|s| s.into_owned()).unwrap_or_default();
         song.title = tag.title().map(|s| s.into_owned()).unwrap_or_default();
         song.genre = tag.genre().map(|s| s.into_owned());
         song.remix = tag.get_string(ItemKey::Remixer).map(|s| s.to_string());
         song.year = Self::get_date(tag);
-        song.duration = properties.duration().as_secs();
+        song.duration = tagged_file.properties().duration().as_secs();
 
         if song.year.unwrap_or_default() == 0 && tag.tag_type() == TagType::Id3v2
             || tag.tag_type() == TagType::Id3v1
@@ -107,7 +111,11 @@ impl MetadataParser {
         };
 
         //artist - song .extension
-        if let Some(file_name) = file_path.extension().and_then(|s| s.to_str()) {
+        if let Some(file_name) = file_path
+            .with_extension("")
+            .file_stem()
+            .and_then(|s| s.to_str())
+        {
             let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
             if parts.len() == 2 {
                 if song.artist == "" {
@@ -117,12 +125,12 @@ impl MetadataParser {
             } else {
                 song.title = file_name.to_string();
             }
-        }
 
-        println!(
-            "parsing fallback hit! title:{:?} artist:{:?}",
-            song.title, song.artist
-        );
+            println!(
+                "parsing fallback hit! parts<{:#?}> title:{:?} artist:{:?}",
+                parts, song.title, song.artist
+            );
+        }
 
         Ok(song)
     }
