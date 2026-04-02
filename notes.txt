@@ -69,3 +69,13 @@ During first setup:
   4. fallback to use entire file name as song_name
 2. Create first filters
 3. Associate filters to songs by albums/dates/song name
+
+
+
+search bar on top, settings icon on the left?
+left bar with filters/metadata editor/history
+body with current songs
+  -songs show the Song info + have each of their filters added on the left, under the name? 
+borrom row with play/stop/next/previous/loop/random, etc
+
+
