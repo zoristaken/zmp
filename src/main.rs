@@ -159,22 +159,38 @@ async fn main() -> anyhow::Result<()> {
         .search_by_db(&player_service.pool, &searchable, 1)
         .await;
 
-    player_service
+    match player_service
         .filter
         .add(&player_service.pool, "trance")
-        .await;
-    player_service
+        .await
+    {
+        Ok(_) => println!("added trance filter"),
+        Err(_) => println!("failed to add trance filter "),
+    }
+    match player_service
         .filter
         .add(&player_service.pool, "metal")
-        .await;
-    player_service
+        .await
+    {
+        Ok(_) => println!("added metal filter"),
+        Err(_) => println!("failed to add metal filter "),
+    }
+    match player_service
         .filter
         .add(&player_service.pool, "oldschool")
-        .await;
-    player_service
+        .await
+    {
+        Ok(_) => println!("added oldschool filter"),
+        Err(_) => println!("failed to add oldschool filter "),
+    }
+    match player_service
         .filter
         .add(&player_service.pool, "favorite")
-        .await;
+        .await
+    {
+        Ok(_) => println!("added favorite filter"),
+        Err(_) => println!("failed to add favorite filter"),
+    }
 
     let r = player_service.filter.get_all(&player_service.pool).await?;
     for s in r {
@@ -295,11 +311,11 @@ async fn main() -> anyhow::Result<()> {
         let id = rng.random_range(1..songs.len());
         match player_service
             .song
-            .get_by_id(&player_service.pool, 331)
+            .get_by_id(&player_service.pool, id as i32)
             .await
         {
             Ok(r) => {
-                println!("playing <{:?}>{:?} by {:?}...", r.id, r.title, r.artist);
+                println!("playing <id={:?}> {:?} by {:?}", r.id, r.title, r.artist);
                 let _ = player_service.play(r.file_path.as_str(), 0.0).await;
                 println!("finished song");
             }
