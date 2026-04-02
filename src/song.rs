@@ -1,3 +1,7 @@
+use sqlx::Acquire;
+
+use crate::sqlite::RepositoryDb;
+
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
 pub struct Song {
@@ -11,43 +15,98 @@ pub struct Song {
     pub file_path: String,
     pub duration: i64,
 }
-pub trait SongRepository: Send + Sync {
-    async fn add_all(&self, songs: Vec<Song>);
-    async fn get_all(&self) -> Vec<Song>;
-    async fn get_by_id(&self, id: i32) -> Song;
-    async fn get_by_title_artist(&self, title: String, artist: String) -> Song;
+pub trait SongRepository<DB>
+where
+    DB: RepositoryDb,
+{
+    async fn add_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB>;
+    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = DB>;
+
+    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = DB>;
+    async fn get_by_title_artist<'a, A>(
+        &self,
+        acquiree: A,
+        title: String,
+        artist: String,
+    ) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = DB>;
     async fn search_by(
         &self,
         songs: &Vec<Song>,
         search: Vec<&str>,
         max_results: usize,
-    ) -> Vec<Song>;
-    async fn search_by_db(&self, words: Vec<&str>, max_results: i32) -> Vec<Song>;
+    ) -> anyhow::Result<Vec<Song>>;
+    async fn search_by_db<'a, A>(
+        &self,
+        acquiree: A,
+        words: Vec<&str>,
+        max_results: i32,
+    ) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = DB>;
 }
 
-pub struct SongService<R: SongRepository> {
+pub struct SongService<R, DB>
+where
+    R: SongRepository<DB>,
+    DB: RepositoryDb,
+{
     repo: R,
+    _db: std::marker::PhantomData<DB>,
 }
 
-impl<R: SongRepository> SongService<R> {
+impl<R, DB> SongService<R, DB>
+where
+    R: SongRepository<DB>,
+    DB: RepositoryDb,
+{
     pub fn new(repo: R) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            _db: Default::default(),
+        }
     }
 
-    pub async fn add_songs(&self, songs: Vec<Song>) {
-        self.repo.add_all(songs).await
+    pub async fn add_songs<'a, A>(&self, acquireee: A, songs: Vec<Song>) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.add_all(acquireee, songs).await
     }
 
-    pub async fn list_songs(&self) -> Vec<Song> {
-        self.repo.get_all().await
+    pub async fn list_songs<'a, A>(&self, acquireee: A) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        self.repo.get_all(acquireee).await
     }
 
-    pub async fn get_by_id(&self, id: i32) -> Song {
-        self.repo.get_by_id(id).await
+    pub async fn get_by_id<'a, A>(&self, acquireee: A, id: i32) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        self.repo.get_by_id(acquireee, id).await
     }
 
-    pub async fn get_by_title_artist(&self, title: String, artist: String) -> Song {
-        self.repo.get_by_title_artist(title, artist).await
+    pub async fn get_by_title_artist<'a, A>(
+        &self,
+        acquireee: A,
+        title: String,
+        artist: String,
+    ) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        self.repo
+            .get_by_title_artist(acquireee, title, artist)
+            .await
     }
 
     pub async fn search_by(
@@ -55,15 +114,23 @@ impl<R: SongRepository> SongService<R> {
         songs: &Vec<Song>,
         search: Vec<&str>,
         max_results: usize,
-    ) -> Vec<Song> {
+    ) -> anyhow::Result<Vec<Song>> {
         self.repo.search_by(songs, search, max_results).await
     }
 
-    pub async fn search_by_db(&self, words: Vec<&str>, max_results: i32) -> Vec<Song> {
+    pub async fn search_by_db<'a, A>(
+        &self,
+        acquireee: A,
+        words: Vec<&str>,
+        max_results: i32,
+    ) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
         if words.len() == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
-        self.repo.search_by_db(words, max_results).await
+        self.repo.search_by_db(acquireee, words, max_results).await
     }
 }

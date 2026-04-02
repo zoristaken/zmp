@@ -1,11 +1,14 @@
 use std::io::BufReader;
 
+use sqlx::Database;
+
 use crate::{
     filter::{FilterRepository, FilterService},
     metadata::MetadataParser,
     setting::{SettingRepository, SettingService},
     song::{SongRepository, SongService},
     song_filter::{SongFilterRepository, SongFilterService},
+    sqlite::{HasPool, RepositoryDb},
 };
 
 struct Player {}
@@ -31,24 +34,33 @@ impl Player {
         Ok(())
     }
 }
-pub struct PlayerService<S, So, F, Sf>
+pub struct PlayerService<S, So, F, Sf, DB>
 where
-    S: SettingRepository,
-    So: SongRepository,
-    F: FilterRepository,
-    Sf: SongFilterRepository,
+    DB: Database + RepositoryDb + Send + Sync + 'static,
+    S: SettingRepository<DB>,
+    So: SongRepository<DB>,
+    F: FilterRepository<DB>,
+    Sf: SongFilterRepository<DB>,
 {
-    pub setting: SettingService<S>,
-    pub song: SongService<So>,
-    pub filter: FilterService<F>,
-    pub song_filter: SongFilterService<Sf>,
+    pub setting: SettingService<S, DB>,
+    pub song: SongService<So, DB>,
+    pub filter: FilterService<F, DB>,
+    pub song_filter: SongFilterService<Sf, DB>,
     pub metadata_parser: MetadataParser,
     player: Player,
+    pub pool: sqlx::Pool<DB>,
+    _db: std::marker::PhantomData<DB>,
 }
 
-impl<R> PlayerService<R, R, R, R>
+impl<R, DB> PlayerService<R, R, R, R, DB>
 where
-    R: SettingRepository + SongRepository + FilterRepository + SongFilterRepository + Clone,
+    DB: Database + RepositoryDb + Send + Sync + 'static,
+    R: SettingRepository<DB>
+        + SongRepository<DB>
+        + FilterRepository<DB>
+        + SongFilterRepository<DB>
+        + HasPool<DB>
+        + Clone,
 {
     pub fn new(repos: R) -> Self {
         Self {
@@ -58,41 +70,39 @@ where
             song_filter: SongFilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Player::new(),
+            pool: repos.pool().clone(),
+            _db: Default::default(),
         }
     }
 
-    //TODO: generalize the db and executor so we can pass the pool into different services
-    //to allow for transaction commits across services/database tables queries
-    //transaction required for the set_processed_music_folder and add_songs
-    pub async fn process_music_folder(&self) {
-        if !self.setting.has_processed_music_folder().await {
-            let folder_path = self.setting.get_music_folder_path().await;
+    pub async fn process_music_folder(&self) -> anyhow::Result<()> {
+        if !self.setting.has_processed_music_folder(&self.pool).await {
+            let folder_path = self.setting.get_music_folder_path(&self.pool).await;
             let songs = self
                 .metadata_parser
                 .parse_song_metadata(folder_path.as_str())
                 .await;
-            self.setting.set_processed_music_folder(true).await;
-            self.song.add_songs(songs).await;
+
+            let mut tx = self.pool.begin().await?;
+            self.setting
+                .set_processed_music_folder(&mut tx, true)
+                .await?;
+            self.song.add_songs(&mut tx, songs).await?;
+            tx.commit().await?
         } else {
             println!("already processed music folder")
         }
+        Ok(())
     }
 
     pub async fn play(&self, file_path: &str, volume: rodio::Float) -> anyhow::Result<()> {
         if volume == 0.0 {
-            let saved_volume = self.setting.get_saved_volume_value().await;
+            let saved_volume = self.setting.get_saved_volume_value(&self.pool).await;
             self.player.play(file_path, saved_volume)?;
             return Ok(());
         }
 
         self.player.play(file_path, volume)?;
-
-        if !self.setting.is_repeat_flag().await {
-            return Ok(());
-        }
-
-        loop {
-            self.player.play(file_path, volume)?;
-        }
+        Ok(())
     }
 }

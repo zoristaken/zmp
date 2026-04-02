@@ -1,6 +1,6 @@
 use anyhow::Context;
 use sqlx::{
-    SqlitePool,
+    Acquire, Database, Pool, Sqlite, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
 };
 use std::str::FromStr;
@@ -11,6 +11,12 @@ use crate::{
     song::{Song, SongRepository},
     song_filter::{SongFilter, SongFilterRepository},
 };
+
+pub trait RepositoryDb: Database + Send + Sync + 'static {}
+
+pub trait HasPool<DB: RepositoryDb> {
+    fn pool(&self) -> &Pool<DB>;
+}
 
 #[derive(Clone)]
 pub struct SqliteDb {
@@ -36,33 +42,54 @@ impl SqliteDb {
     }
 }
 
-impl SongRepository for SqliteDb {
-    async fn add_all(&self, songs: Vec<Song>) {
+impl RepositoryDb for Sqlite {}
+
+impl HasPool<Sqlite> for SqliteDb {
+    fn pool(&self) -> &Pool<Sqlite> {
+        &self.pool
+    }
+}
+
+impl SongRepository<Sqlite> for SqliteDb {
+    async fn add_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
         for val in songs {
             let _ = sqlx::query(
-            "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING;",
+            "INSERT OR IGNORE INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
-        .bind(val.title)
-        .bind(val.artist)
-        .bind(val.release_year)
-        .bind(val.album)
-        .bind(val.remix)
-        .bind(val.search_blob)
-        .bind(val.file_path)
-        .bind(val.duration)
-        .execute(&self.pool)
-        .await;
+        .bind(val.title.clone())
+        .bind(val.artist.clone())
+        .bind(val.release_year.clone())
+        .bind(val.album.clone())
+        .bind(val.remix.clone())
+        .bind(val.search_blob.clone())
+        .bind(val.file_path.clone())
+        .bind(val.duration.clone())
+        .execute(&mut *conn)
+        .await
+        .expect(format!("failed inserting: {:#?}", val).as_str());
         }
+
+        Ok(())
     }
 
-    async fn get_all(&self) -> Vec<Song> {
-        sqlx::query_as::<sqlx::Sqlite, Song>(
+    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let songs = sqlx::query_as::<sqlx::Sqlite, Song>(
         "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song"
             )
-            .fetch_all(&self.pool)
-            .await
-            .unwrap()
+            .fetch_all(conn)
+            .await?;
+        Ok(songs)
     }
 
     //An in memory search alternative to the search_by_db query
@@ -71,8 +98,8 @@ impl SongRepository for SqliteDb {
         songs: &Vec<Song>,
         search: Vec<&str>,
         max_results: usize,
-    ) -> Vec<Song> {
-        songs
+    ) -> anyhow::Result<Vec<Song>> {
+        Ok(songs
             .iter()
             .filter(|s| {
                 search
@@ -81,10 +108,18 @@ impl SongRepository for SqliteDb {
             })
             .take(max_results)
             .cloned()
-            .collect()
+            .collect())
     }
 
-    async fn search_by_db(&self, words: Vec<&str>, max_results: i32) -> Vec<Song> {
+    async fn search_by_db<'a, A>(
+        &self,
+        acquiree: A,
+        words: Vec<&str>,
+        max_results: i32,
+    ) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE ",
         );
@@ -102,33 +137,53 @@ impl SongRepository for SqliteDb {
         qb.push(" LIMIT ");
         qb.push_bind(max_results);
 
+        let conn = &mut *acquiree.acquire().await?;
+
         let query = qb.build_query_as::<Song>();
-        query.fetch_all(&self.pool).await.unwrap()
+        let songs = query.fetch_all(conn).await?;
+
+        Ok(songs)
     }
 
-    async fn get_by_id(&self, id: i32) -> Song {
-        sqlx::query_as::<sqlx::Sqlite, Song>(
+    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let song = sqlx::query_as::<sqlx::Sqlite, Song>(
         "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE id = ?"
             )
             .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .unwrap()
+            .fetch_one(conn)
+            .await?;
+        Ok(song)
     }
 
-    async fn get_by_title_artist(&self, title: String, artist: String) -> Song {
-        sqlx::query_as::<sqlx::Sqlite, Song>(
+    async fn get_by_title_artist<'a, A>(
+        &self,
+        acquiree: A,
+        title: String,
+        artist: String,
+    ) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let song = sqlx::query_as::<sqlx::Sqlite, Song>(
         "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE title = ? AND artist = ?"
             )
             .bind(title)
             .bind(artist)
-            .fetch_one(&self.pool)
-            .await
-            .unwrap()
+            .fetch_one(conn)
+            .await?;
+
+        Ok(song)
     }
 }
 
-impl FilterRepository for SqliteDb {
+impl FilterRepository<Sqlite> for SqliteDb {
     async fn add(&self, name: &str) {
         let _ = sqlx::query("INSERT INTO filter (name) VALUES ($1);")
             .bind(name)
@@ -160,18 +215,34 @@ impl FilterRepository for SqliteDb {
     }
 }
 
-impl SongFilterRepository for SqliteDb {
-    async fn add(&self, song_filter: SongFilter) {
-        let _ = sqlx::query(
+impl SongFilterRepository<Sqlite> for SqliteDb {
+    async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        sqlx::query(
             "INSERT INTO song_filter (song_id, filter_id)
                     VALUES ($1, $2)",
         )
         .bind(song_filter.song_id)
         .bind(song_filter.filter_id)
-        .execute(&self.pool)
-        .await;
+        .execute(conn)
+        .await?;
+
+        Ok(())
     }
-    async fn add_multiple(&self, song_filters: Vec<SongFilter>) {
+    async fn add_multiple<'a, A>(
+        &self,
+        acquiree: A,
+        song_filters: Vec<SongFilter>,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
         for val in song_filters {
             let _ = sqlx::query(
                 "INSERT INTO song_filter (song_id, filter_id)
@@ -179,66 +250,107 @@ impl SongFilterRepository for SqliteDb {
             )
             .bind(val.song_id)
             .bind(val.filter_id)
-            .execute(&self.pool)
-            .await;
+            .execute(&mut *conn)
+            .await?;
         }
+
+        Ok(())
     }
 
-    async fn get_by_id(&self, id: i32) -> SongFilter {
-        sqlx::query_as::<sqlx::Sqlite, SongFilter>(
+    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
             "SELECT id, song_id, filter_id FROM song_filter WHERE id = ?",
         )
         .bind(id)
-        .fetch_one(&self.pool)
-        .await
-        .unwrap()
+        .fetch_one(conn)
+        .await?;
+
+        Ok(song_filter)
     }
 
     //TODO: add filter_id index?
-    async fn get_by_filter(&self, filter_id: i32) -> Vec<SongFilter> {
-        sqlx::query_as::<sqlx::Sqlite, SongFilter>(
+    async fn get_by_filter<'a, A>(
+        &self,
+        acquiree: A,
+        filter_id: i32,
+    ) -> anyhow::Result<Vec<SongFilter>>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
             "SELECT id, song_id, filter_id FROM song_filter WHERE filter_id = ?",
         )
         .bind(filter_id)
-        .fetch_all(&self.pool)
-        .await
-        .unwrap()
+        .fetch_all(conn)
+        .await?;
+
+        Ok(song_filter)
     }
 
     //TODO: add song_id index?
-    async fn get_by_song(&self, song_id: i32) -> Vec<SongFilter> {
-        sqlx::query_as::<sqlx::Sqlite, SongFilter>(
+    async fn get_by_song<'a, A>(&self, acquiree: A, song_id: i32) -> anyhow::Result<Vec<SongFilter>>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
             "SELECT id, song_id, filter_id FROM song_filter WHERE song_id = ?",
         )
         .bind(song_id)
-        .fetch_all(&self.pool)
-        .await
-        .unwrap()
+        .fetch_all(conn)
+        .await?;
+
+        Ok(song_filter)
     }
 
-    async fn get_all(&self) -> Vec<SongFilter> {
-        sqlx::query_as::<sqlx::Sqlite, SongFilter>("SELECT id, song_id, filter_id FROM song_filter")
-            .fetch_all(&self.pool)
-            .await
-            .unwrap()
+    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let song_filters = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
+            "SELECT id, song_id, filter_id FROM song_filter",
+        )
+        .fetch_all(conn)
+        .await?;
+
+        Ok(song_filters)
     }
 }
 
-impl SettingRepository for SqliteDb {
-    async fn set(&self, key: &str, value: &str) {
+impl SettingRepository<Sqlite> for SqliteDb {
+    async fn set<'a, A>(&self, acquiree: A, key: &str, value: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let mut conn = acquiree.acquire().await?;
         let _ = sqlx::query("INSERT INTO setting (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = ($2) WHERE key = ($1);")
                     .bind(key)
                     .bind(value)
-                    .execute(&self.pool)
+                    .execute(&mut *conn)
                     .await;
+        Ok(())
     }
 
-    async fn get(&self, key: &str) -> anyhow::Result<Setting> {
+    async fn get<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<Setting>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let mut conn = acquiree.acquire().await?;
         Ok(sqlx::query_as::<sqlx::Sqlite, Setting>(
             "SELECT id, key, value FROM setting WHERE key = ?",
         )
         .bind(key)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *conn)
         .await?)
     }
 }

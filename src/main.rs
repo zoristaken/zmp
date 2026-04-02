@@ -21,95 +21,142 @@ async fn main() -> anyhow::Result<()> {
 
     player_service
         .setting
-        .set_music_folder_path("/home/z/Music")
-        .await;
+        .set_music_folder_path(&player_service.pool, "/home/z/Music")
+        .await?;
 
     player_service
         .setting
-        .set_random_play(!player_service.setting.is_random_play().await)
-        .await;
+        .set_random_play(&player_service.pool, true)
+        .await?;
 
     println!(
         "set random play to:{}",
-        player_service.setting.is_random_play().await
+        player_service
+            .setting
+            .is_random_play(&player_service.pool)
+            .await
     );
 
     player_service
         .setting
-        .set_repeat_flag(!player_service.setting.is_repeat_flag().await)
-        .await;
+        .set_repeat_flag(&player_service.pool, true)
+        .await?;
 
     println!(
         "set repeat play to:{}",
-        player_service.setting.is_repeat_flag().await
+        player_service
+            .setting
+            .is_repeat_flag(&player_service.pool)
+            .await
     );
 
-    player_service.setting.set_next_keybind("f3").await;
-    let next_kb = player_service.setting.get_next_keybind().await;
-    player_service.setting.set_previous_keybind("f1").await;
-    let previous_kb = player_service.setting.get_previous_keybind().await;
-    player_service.setting.set_play_stop_keybind("f2").await;
-    let play_kb = player_service.setting.get_play_stop_keybind().await;
-    player_service.setting.set_settings_keybind("f5").await;
-    let settings_kb = player_service.setting.get_settings_keybind().await;
-    player_service.setting.set_random_keybind("f4").await;
-    let random_kb = player_service.setting.get_random_keybind().await;
+    player_service
+        .setting
+        .set_next_keybind(&player_service.pool, "f3")
+        .await?;
+    let next_kb = player_service
+        .setting
+        .get_next_keybind(&player_service.pool)
+        .await?;
+    player_service
+        .setting
+        .set_previous_keybind(&player_service.pool, "f1")
+        .await?;
+    let previous_kb = player_service
+        .setting
+        .get_previous_keybind(&player_service.pool)
+        .await?;
+    player_service
+        .setting
+        .set_play_stop_keybind(&player_service.pool, "f2")
+        .await?;
+    let play_kb = player_service
+        .setting
+        .get_play_stop_keybind(&player_service.pool)
+        .await?;
+    player_service
+        .setting
+        .set_settings_keybind(&player_service.pool, "f5")
+        .await?;
+    let settings_kb = player_service
+        .setting
+        .get_settings_keybind(&player_service.pool)
+        .await?;
+    player_service
+        .setting
+        .set_random_keybind(&player_service.pool, "f4")
+        .await?;
+    let random_kb = player_service
+        .setting
+        .get_random_keybind(&player_service.pool)
+        .await;
 
     println!(
         "KEYBINDS\nnext:{:?}\nprevious:{:?}\nplay/stop:{:?}\nsettings:{:?}\nrandom:{:?}",
         next_kb, previous_kb, play_kb, settings_kb, random_kb
     );
 
-    player_service.process_music_folder().await;
+    player_service.process_music_folder().await?;
 
-    let songs = player_service.song.list_songs().await;
-    let mut rng = rand::rng();
+    let songs = player_service.song.list_songs(&player_service.pool).await?;
+    for s in &songs {
+        println!("All songs list id: {:#?}", s.id);
+    }
 
-    let id = rng.random_range(1..songs.len());
+    let searchable = vec!["komm", "juju"];
+    let max_results: i32 = 10;
+    let r = player_service
+        .song
+        .search_by(&songs, searchable.clone(), max_results as usize)
+        .await?;
 
-    // for s in &songs {
-    //     println!("All songs list: {:#?}", s);
-    // }
-    let searchable = vec!["left", "behind"];
-    let r = player_service.song.search_by(&songs, searchable, 10).await;
     for s in r {
         println!("1 Songs List: {:#?}", s);
     }
 
-    let searchable = vec!["left", "behind"];
-    let r = player_service.song.search_by_db(searchable, 10).await;
+    let r = player_service
+        .song
+        .search_by_db(&player_service.pool, searchable, max_results)
+        .await?;
+
     for s in r {
         println!("2 Songs List: {:#?}", s);
     }
 
-    let _ = player_service
-        .song
-        .get_by_title_artist("Sanctuary (Opening)".to_string(), "Utada".to_string());
+    let mut rng = rand::rng();
+
+    let _ = player_service.song.get_by_title_artist(
+        &player_service.pool,
+        "Sanctuary (Opening)".to_string(),
+        "Utada".to_string(),
+    );
 
     player_service
         .setting
-        .set_saved_search_blob("left behind")
-        .await;
+        .set_saved_search_blob(&player_service.pool, "apoca path")
+        .await?;
 
-    let blob = player_service.setting.get_saved_search_blob().await?;
+    let blob = player_service
+        .setting
+        .get_saved_search_blob(&player_service.pool)
+        .await?;
     println!("db saved search blob: {:?}", blob);
 
-    player_service.setting.set_saved_volume_value(0.7).await;
+    player_service
+        .setting
+        .set_saved_volume_value(&player_service.pool, 0.7)
+        .await?;
 
-    let saved_volume = player_service.setting.get_saved_volume_value().await;
+    let saved_volume = player_service
+        .setting
+        .get_saved_volume_value(&player_service.pool)
+        .await;
     println!("saved volume variable: {:?}", saved_volume);
 
-    let _ = player_service.song.get_by_id(id as i32).await;
-
-    let r = player_service
-        .song
-        .search_by_db(blob.split_whitespace().collect(), 1)
-        .await;
-
     let _ = player_service
-        .play(r.first().unwrap().file_path.as_str(), saved_volume)
+        .song
+        .search_by_db(&player_service.pool, blob.split_whitespace().collect(), 1)
         .await;
-    println!("finished song");
 
     player_service.filter.add("trance").await;
     player_service.filter.add("metal").await;
@@ -132,57 +179,110 @@ async fn main() -> anyhow::Result<()> {
     let r = player_service.filter.get_by_id(4).await;
     println!("Found filter by id <id:{:?}, name:{:?}>", r.id, r.name);
 
-    player_service
+    match player_service
         .song_filter
-        .add(SongFilter {
-            id: 0,
-            filter_id: 1,
-            song_id: 100001,
-        })
-        .await;
-
-    player_service
-        .song_filter
-        .add_multiple(vec![
-            SongFilter {
-                id: 0,
-                filter_id: 4,
-                song_id: 100001,
-            },
+        .add(
+            &player_service.pool,
             SongFilter {
                 id: 0,
                 filter_id: 1,
-                song_id: 1,
+                song_id: 33,
             },
-        ])
-        .await;
+        )
+        .await
+    {
+        Ok(_) => println!("managed to add filter id 1 to song id 33"),
+        Err(_) => println!("filter id 1 and song id 33 already exist"),
+    }
 
-    let r = player_service.song_filter.get_all().await;
+    match player_service
+        .song_filter
+        .add_multiple(
+            &player_service.pool,
+            vec![
+                SongFilter {
+                    id: 0,
+                    filter_id: 4,
+                    song_id: 43,
+                },
+                SongFilter {
+                    id: 0,
+                    filter_id: 1,
+                    song_id: 1,
+                },
+            ],
+        )
+        .await
+    {
+        Ok(_) => println!("managed to add filter id 4 to song id 43 and filter id 1 to song id 1"),
+        Err(_) => println!(
+            "filter id 1 and song id 43 already exist or filter id 1 and song id 1 already exist"
+        ),
+    }
+
+    let r = player_service
+        .song_filter
+        .get_all(&player_service.pool)
+        .await?;
     for s in r {
         println!(
             "Found all song filter <id:{:?}, filter_id:{:?}, song_id{:?}>",
             s.id, s.filter_id, s.song_id
         );
     }
-    let r = player_service.song_filter.get_by_id(1).await;
+    let r = player_service
+        .song_filter
+        .get_by_id(&player_service.pool, 1)
+        .await?;
     println!(
         "Found song filter by id <id:{:?}, filter_id:{:?}, song_id:{:?}>",
         r.id, r.filter_id, r.song_id
     );
-    let r = player_service.song_filter.get_by_filter(2).await;
+    let r = player_service
+        .song_filter
+        .get_by_filter(&player_service.pool, 2)
+        .await?;
     for s in r {
         println!(
             "Found song filter by filter <id:{:?}, filter_id:{:?}, song_id:{:?}>",
             s.id, s.filter_id, s.song_id
         );
     }
-    let r = player_service.song_filter.get_by_song(54).await;
+    let r = player_service
+        .song_filter
+        .get_by_song(&player_service.pool, 54)
+        .await?;
     for s in r {
         println!(
             "Found song filter by song <id:{:?}, filter_id:{:?}, song_id:{:?}>",
             s.id, s.filter_id, s.song_id
         );
     }
+
+    while player_service
+        .setting
+        .is_repeat_flag(&player_service.pool)
+        .await
+    {
+        let id = rng.random_range(1..songs.len());
+        match player_service
+            .song
+            .get_by_id(&player_service.pool, id as i32)
+            .await
+        {
+            Ok(_) => {
+                let r = player_service
+                    .song
+                    .get_by_id(&player_service.pool, id as i32)
+                    .await?;
+                println!("playing <{:?}>{:?} by {:?}...", r.id, r.title, r.artist);
+                let _ = player_service.play(r.file_path.as_str(), 0.0).await;
+                println!("finished song");
+            }
+            Err(_) => println!("Hit one of the skipped ids lmao"),
+        }
+    }
+
     Ok(())
 }
 
@@ -190,7 +290,6 @@ async fn main() -> anyhow::Result<()> {
 // read modules
 // move tests into actual tests (perhaps db mocks + actual dev db test)
 // add actual error logic + remove .unwrap()
-// check transaction TODO
 // try local web?
 // add frontend
 // make tauri alternative
