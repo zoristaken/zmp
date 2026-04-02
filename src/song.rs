@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use sqlx::Acquire;
 
 use crate::sqlite::RepositoryDb;
@@ -32,21 +34,21 @@ where
     async fn get_by_title_artist<'a, A>(
         &self,
         acquiree: A,
-        title: String,
-        artist: String,
+        title: &str,
+        artist: &str,
     ) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = DB>;
     async fn search_by(
         &self,
-        songs: &Vec<Song>,
-        search: Vec<&str>,
+        songs: &[Song],
+        search: &[&str],
         max_results: usize,
     ) -> anyhow::Result<Vec<Song>>;
     async fn search_by_db<'a, A>(
         &self,
         acquiree: A,
-        words: Vec<&str>,
+        words: &[&str],
         max_results: i32,
     ) -> anyhow::Result<Vec<Song>>
     where
@@ -70,7 +72,7 @@ where
     pub fn new(repo: R) -> Self {
         Self {
             repo,
-            _db: Default::default(),
+            _db: PhantomData,
         }
     }
 
@@ -98,8 +100,8 @@ where
     pub async fn get_by_title_artist<'a, A>(
         &self,
         acquireee: A,
-        title: String,
-        artist: String,
+        title: &str,
+        artist: &str,
     ) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = DB>,
@@ -111,8 +113,8 @@ where
 
     pub async fn search_by(
         &self,
-        songs: &Vec<Song>,
-        search: Vec<&str>,
+        songs: &[Song],
+        search: &[&str],
         max_results: usize,
     ) -> anyhow::Result<Vec<Song>> {
         self.repo.search_by(songs, search, max_results).await
@@ -121,7 +123,7 @@ where
     pub async fn search_by_db<'a, A>(
         &self,
         acquireee: A,
-        words: Vec<&str>,
+        words: &[&str],
         max_results: i32,
     ) -> anyhow::Result<Vec<Song>>
     where

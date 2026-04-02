@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::sqlite::RepositoryDb;
 
 #[allow(dead_code)]
@@ -31,7 +33,7 @@ where
     pub fn new(repo: R) -> Self {
         Self {
             repo,
-            _db: Default::default(),
+            _db: PhantomData,
         }
     }
 

@@ -103,11 +103,11 @@ async fn main() -> anyhow::Result<()> {
         println!("All songs list id: {:#?}", s.id);
     }
 
-    let searchable = vec!["komm", "juju"];
+    let searchable = &["komm", "juju"];
     let max_results: i32 = 10;
     let r = player_service
         .song
-        .search_by(&songs, searchable.clone(), max_results as usize)
+        .search_by(&songs, searchable, max_results as usize)
         .await?;
 
     for s in r {
@@ -127,8 +127,8 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = player_service.song.get_by_title_artist(
         &player_service.pool,
-        "Sanctuary (Opening)".to_string(),
-        "Utada".to_string(),
+        "Sanctuary (Opening)",
+        "Utada",
     );
 
     player_service
@@ -153,9 +153,10 @@ async fn main() -> anyhow::Result<()> {
         .await;
     println!("saved volume variable: {:?}", saved_volume);
 
+    let searchable: Vec<&str> = blob.split_whitespace().collect();
     let _ = player_service
         .song
-        .search_by_db(&player_service.pool, blob.split_whitespace().collect(), 1)
+        .search_by_db(&player_service.pool, &searchable, 1)
         .await;
 
     player_service.filter.add("trance").await;

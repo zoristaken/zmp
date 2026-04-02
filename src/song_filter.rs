@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use sqlx::Acquire;
 
 use crate::sqlite::RepositoryDb;
@@ -63,7 +65,7 @@ where
     pub fn new(repo: R) -> Self {
         Self {
             repo,
-            _db: Default::default(),
+            _db: PhantomData,
         }
     }
 

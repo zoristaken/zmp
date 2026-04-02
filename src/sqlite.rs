@@ -95,8 +95,8 @@ impl SongRepository<Sqlite> for SqliteDb {
     //An in memory search alternative to the search_by_db query
     async fn search_by(
         &self,
-        songs: &Vec<Song>,
-        search: Vec<&str>,
+        songs: &[Song],
+        search: &[&str],
         max_results: usize,
     ) -> anyhow::Result<Vec<Song>> {
         Ok(songs
@@ -114,7 +114,7 @@ impl SongRepository<Sqlite> for SqliteDb {
     async fn search_by_db<'a, A>(
         &self,
         acquiree: A,
-        words: Vec<&str>,
+        words: &[&str],
         max_results: i32,
     ) -> anyhow::Result<Vec<Song>>
     where
@@ -163,8 +163,8 @@ impl SongRepository<Sqlite> for SqliteDb {
     async fn get_by_title_artist<'a, A>(
         &self,
         acquiree: A,
-        title: String,
-        artist: String,
+        title: &str,
+        artist: &str,
     ) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = Sqlite>,

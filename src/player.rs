@@ -1,6 +1,4 @@
-use std::io::BufReader;
-
-use sqlx::Database;
+use std::{io::BufReader, marker::PhantomData};
 
 use crate::{
     filter::{FilterRepository, FilterService},
@@ -36,7 +34,7 @@ impl Player {
 }
 pub struct PlayerService<S, So, F, Sf, DB>
 where
-    DB: Database + RepositoryDb + Send + Sync + 'static,
+    DB: RepositoryDb,
     S: SettingRepository<DB>,
     So: SongRepository<DB>,
     F: FilterRepository<DB>,
@@ -54,7 +52,7 @@ where
 
 impl<R, DB> PlayerService<R, R, R, R, DB>
 where
-    DB: Database + RepositoryDb + Send + Sync + 'static,
+    DB: RepositoryDb,
     R: SettingRepository<DB>
         + SongRepository<DB>
         + FilterRepository<DB>
@@ -71,13 +69,13 @@ where
             metadata_parser: MetadataParser::new(),
             player: Player::new(),
             pool: repos.pool().clone(),
-            _db: Default::default(),
+            _db: PhantomData,
         }
     }
 
     pub async fn process_music_folder(&self) -> anyhow::Result<()> {
         if !self.setting.has_processed_music_folder(&self.pool).await {
-            let folder_path = self.setting.get_music_folder_path(&self.pool).await;
+            let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
             let songs = self
                 .metadata_parser
                 .parse_song_metadata(folder_path.as_str())

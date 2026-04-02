@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use anyhow::Context;
 use sqlx::Acquire;
 
@@ -26,7 +28,7 @@ pub struct Setting {
 
 pub trait SettingRepository<DB>
 where
-    DB: RepositoryDb + Send + Sync,
+    DB: RepositoryDb,
 {
     async fn set<'a, A>(&self, acquiree: A, key: &str, value: &str) -> anyhow::Result<()>
     where
@@ -53,18 +55,15 @@ where
     pub fn new(repo: R) -> Self {
         Self {
             repo,
-            _db: Default::default(),
+            _db: PhantomData,
         }
     }
 
-    pub async fn get_music_folder_path<'a, A>(&self, acquiree: A) -> String
+    pub async fn get_music_folder_path<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB>,
     {
-        match self.get(acquiree, MUSIC_FOLDER_PATH_KEY).await {
-            Ok(setting) => setting.value,
-            Err(_) => "".to_string(),
-        }
+        Ok(self.get(acquiree, MUSIC_FOLDER_PATH_KEY).await?.value)
     }
 
     pub async fn set_music_folder_path<'a, A>(&self, acquiree: A, path: &str) -> anyhow::Result<()>
@@ -90,12 +89,7 @@ where
         A: Acquire<'a, Database = DB>,
     {
         match self.get(acquiree, REPEAT_FLAG).await {
-            Ok(setting) => {
-                if setting.value == "true" {
-                    return true;
-                }
-                return false;
-            }
+            Ok(setting) => return setting.value == "true",
             Err(_) => return false,
         };
     }
@@ -144,8 +138,7 @@ where
     where
         A: Acquire<'a, Database = DB>,
     {
-        self.set(acquiree, VOLUME_VALUE, volume.to_string().as_str())
-            .await
+        self.set(acquiree, VOLUME_VALUE, &volume.to_string()).await
     }
 
     pub async fn set_processed_music_folder<'a, A>(
@@ -168,12 +161,7 @@ where
         A: Acquire<'a, Database = DB>,
     {
         match self.get(acquiree, PROCESSED_MUSIC_FLAG).await {
-            Ok(setting) => {
-                if setting.value == "true" {
-                    return true;
-                }
-                return false;
-            }
+            Ok(setting) => return setting.value == "true",
             Err(_) => return false,
         };
     }
@@ -289,12 +277,7 @@ where
         A: Acquire<'a, Database = DB>,
     {
         match self.get(acquiree, RANDOM_PLAY_FLAG).await {
-            Ok(setting) => {
-                if setting.value == "true" {
-                    return true;
-                }
-                return false;
-            }
+            Ok(setting) => return setting.value == "true",
             Err(_) => return false,
         }
     }
