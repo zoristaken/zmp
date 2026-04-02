@@ -1,4 +1,4 @@
-use std::{io::BufReader, marker::PhantomData};
+use std::{io::BufReader, marker::PhantomData, path::Path};
 
 use crate::{
     filter::{FilterRepository, FilterService},
@@ -78,8 +78,7 @@ where
             let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
             let songs = self
                 .metadata_parser
-                .parse_song_metadata(folder_path.as_str())
-                .await;
+                .parse_song_metadata(Path::new(&folder_path))?;
 
             let mut tx = self.pool.begin().await?;
             self.setting

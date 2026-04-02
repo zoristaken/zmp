@@ -1,20 +1,36 @@
-mod config;
-mod filter;
-mod metadata;
-mod player;
-mod setting;
-mod song;
-mod song_filter;
-mod sqlite;
-
-use config::Config;
 use rand::prelude::*;
-use song_filter::SongFilter;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let config = Config::new()?;
-    let sqlite = sqlite::SqliteDb::new(&config.database_url).await?;
+use crate::config;
+use crate::filter;
+use crate::player;
+use crate::song_filter::SongFilter;
+use crate::sqlite::HasPool;
+use crate::sqlite::SqliteDb;
+
+#[derive(Debug, serde::Serialize)]
+pub struct ErrorResponse {
+    message: String,
+}
+
+impl From<anyhow::Error> for ErrorResponse {
+    fn from(e: anyhow::Error) -> Self {
+        Self {
+            message: e.to_string(),
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
+    let config = config::Config::new();
+    let sqlite = SqliteDb::new(&config?.database_url).await?;
+
+    let filter_service = filter::FilterService::new(sqlite.clone());
+
+    let r = filter_service.get_all(sqlite.pool()).await?;
+    for s in &r {
+        println!("Found all filter <id:{:?}, name:{:?}>", s.id, s.name);
+    }
 
     //testing for now
     let player_service = player::PlayerService::new(sqlite);
@@ -99,9 +115,9 @@ async fn main() -> anyhow::Result<()> {
     player_service.process_music_folder().await?;
 
     let songs = player_service.song.list_songs(&player_service.pool).await?;
-    for s in &songs {
-        println!("All songs list id: {:#?}", s.id);
-    }
+    // for s in &songs {
+    //     println!("All songs list id: {:#?}", s.id);
+    // }
 
     let searchable = &["komm", "juju"];
     let max_results: i32 = 10;
@@ -123,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
         println!("2 Songs List: {:#?}", s);
     }
 
-    let mut rng = rand::rng();
+    //let mut rng = rand::rng();
 
     let _ = player_service.song.get_by_title_artist(
         &player_service.pool,
@@ -308,7 +324,7 @@ async fn main() -> anyhow::Result<()> {
         .is_repeat_flag(&player_service.pool)
         .await
     {
-        let id = rng.random_range(1..songs.len());
+        let id = rand::random_range(1..songs.len());
         match player_service
             .song
             .get_by_id(&player_service.pool, id as i32)
@@ -322,7 +338,6 @@ async fn main() -> anyhow::Result<()> {
             Err(_) => println!("Hit one of the skipped ids lmao"),
         }
     }
-
     Ok(())
 }
 

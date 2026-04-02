@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use async_trait::async_trait;
 use sqlx::Acquire;
 
 use crate::sqlite::RepositoryDb;
@@ -12,40 +13,41 @@ pub struct SongFilter {
     pub filter_id: i32,
 }
 
+#[async_trait]
 pub trait SongFilterRepository<DB>
 where
     DB: RepositoryDb,
 {
     async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = DB>;
+        A: Acquire<'a, Database = DB> + Send;
     async fn add_multiple<'a, A>(
         &self,
         acquiree: A,
         song_filters: Vec<SongFilter>,
     ) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = DB>;
+        A: Acquire<'a, Database = DB> + Send;
     async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = DB>;
+        A: Acquire<'a, Database = DB> + Send;
     async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
     where
-        A: Acquire<'a, Database = DB>;
+        A: Acquire<'a, Database = DB> + Send;
     async fn get_by_filter<'a, A>(
         &self,
         acquiree: A,
         filter_id: i32,
     ) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = DB>;
+        A: Acquire<'a, Database = DB> + Send;
     async fn get_by_song<'a, A>(
         &self,
         acquiree: A,
         song_id: i32,
     ) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = DB>;
+        A: Acquire<'a, Database = DB> + Send;
 }
 
 pub struct SongFilterService<R, DB>
@@ -71,7 +73,7 @@ where
 
     pub async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = DB>,
+        A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.add(acquiree, song_filter).await
     }
@@ -82,21 +84,21 @@ where
         song_filters: Vec<SongFilter>,
     ) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = DB>,
+        A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.add_multiple(acquiree, song_filters).await
     }
 
     pub async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = DB>,
+        A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.get_all(acquiree).await
     }
 
     pub async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
     where
-        A: Acquire<'a, Database = DB>,
+        A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.get_by_id(acquiree, id).await
     }
@@ -107,7 +109,7 @@ where
         filter_id: i32,
     ) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = DB>,
+        A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.get_by_filter(acquiree, filter_id).await
     }
@@ -118,7 +120,7 @@ where
         song_id: i32,
     ) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = DB>,
+        A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.get_by_song(acquiree, song_id).await
     }
