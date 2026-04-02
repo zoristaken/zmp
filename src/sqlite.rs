@@ -184,34 +184,60 @@ impl SongRepository<Sqlite> for SqliteDb {
 }
 
 impl FilterRepository<Sqlite> for SqliteDb {
-    async fn add(&self, name: &str) {
+    async fn add<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
         let _ = sqlx::query("INSERT INTO filter (name) VALUES ($1);")
             .bind(name)
-            .execute(&self.pool)
-            .await;
+            .execute(conn)
+            .await?;
+
+        Ok(())
     }
-    async fn get_all(&self) -> Vec<Filter> {
-        sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter")
-            .fetch_all(&self.pool)
-            .await
-            .unwrap()
+    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+        let filter = sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter")
+            .fetch_all(conn)
+            .await?;
+
+        Ok(filter)
     }
 
     //TODO: add name index?
-    async fn get_by_name(&self, name: &str) -> Filter {
-        sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter WHERE name = ?")
-            .bind(name)
-            .fetch_one(&self.pool)
-            .await
-            .unwrap()
+    async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let filter =
+            sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter WHERE name = ?")
+                .bind(name)
+                .fetch_one(conn)
+                .await?;
+
+        Ok(filter)
     }
 
-    async fn get_by_id(&self, filter_id: i32) -> Filter {
-        sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter WHERE id = ?")
-            .bind(filter_id)
-            .fetch_one(&self.pool)
-            .await
-            .unwrap()
+    async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
+    where
+        A: Acquire<'a, Database = Sqlite>,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let filter =
+            sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter WHERE id = ?")
+                .bind(filter_id)
+                .fetch_one(conn)
+                .await?;
+
+        Ok(filter)
     }
 }
 

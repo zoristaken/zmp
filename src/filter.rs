@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use sqlx::Acquire;
+
 use crate::sqlite::RepositoryDb;
 
 #[allow(dead_code)]
@@ -10,10 +12,18 @@ pub struct Filter {
 }
 
 pub trait FilterRepository<DB> {
-    async fn add(&self, name: &str);
-    async fn get_all(&self) -> Vec<Filter>;
-    async fn get_by_name(&self, name: &str) -> Filter;
-    async fn get_by_id(&self, filter_id: i32) -> Filter;
+    async fn add<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB>;
+    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
+    where
+        A: Acquire<'a, Database = DB>;
+    async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
+    where
+        A: Acquire<'a, Database = DB>;
+    async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
+    where
+        A: Acquire<'a, Database = DB>;
 }
 
 pub struct FilterService<R, DB>
@@ -37,19 +47,33 @@ where
         }
     }
 
-    pub async fn add(&self, name: &str) {
-        self.repo.add(name).await;
+    pub async fn add<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        self.repo.add(acquiree, name).await?;
+
+        Ok(())
     }
 
-    pub async fn get_all(&self) -> Vec<Filter> {
-        self.repo.get_all().await
+    pub async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        Ok(self.repo.get_all(acquiree).await?)
     }
 
-    pub async fn get_by_name(&self, name: &str) -> Filter {
-        self.repo.get_by_name(name).await
+    pub async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        Ok(self.repo.get_by_name(acquiree, name).await?)
     }
 
-    pub async fn get_by_id(&self, filter_id: i32) -> Filter {
-        self.repo.get_by_id(filter_id).await
+    pub async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
+    where
+        A: Acquire<'a, Database = DB>,
+    {
+        Ok(self.repo.get_by_id(acquiree, filter_id).await?)
     }
 }

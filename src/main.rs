@@ -159,25 +159,52 @@ async fn main() -> anyhow::Result<()> {
         .search_by_db(&player_service.pool, &searchable, 1)
         .await;
 
-    player_service.filter.add("trance").await;
-    player_service.filter.add("metal").await;
-    player_service.filter.add("oldschool").await;
-    player_service.filter.add("favorite").await;
+    player_service
+        .filter
+        .add(&player_service.pool, "trance")
+        .await;
+    player_service
+        .filter
+        .add(&player_service.pool, "metal")
+        .await;
+    player_service
+        .filter
+        .add(&player_service.pool, "oldschool")
+        .await;
+    player_service
+        .filter
+        .add(&player_service.pool, "favorite")
+        .await;
 
-    let r = player_service.filter.get_all().await;
+    let r = player_service.filter.get_all(&player_service.pool).await?;
     for s in r {
         println!("Found all filter <id:{:?}, name:{:?}>", s.id, s.name);
     }
 
-    let r = player_service.filter.get_by_name("favorite").await;
+    let r = player_service
+        .filter
+        .get_by_name(&player_service.pool, "favorite")
+        .await?;
     println!("Found filter by name <id:{:?}, name:{:?}>", r.id, r.name);
-    let r = player_service.filter.get_by_id(1).await;
+    let r = player_service
+        .filter
+        .get_by_id(&player_service.pool, 1)
+        .await?;
     println!("Found filter by id <id:{:?}, name:{:?}>", r.id, r.name);
-    let r = player_service.filter.get_by_id(2).await;
+    let r = player_service
+        .filter
+        .get_by_id(&player_service.pool, 2)
+        .await?;
     println!("Found filter by id <id:{:?}, name:{:?}>", r.id, r.name);
-    let r = player_service.filter.get_by_id(3).await;
+    let r = player_service
+        .filter
+        .get_by_id(&player_service.pool, 3)
+        .await?;
     println!("Found filter by id <id:{:?}, name:{:?}>", r.id, r.name);
-    let r = player_service.filter.get_by_id(4).await;
+    let r = player_service
+        .filter
+        .get_by_id(&player_service.pool, 4)
+        .await?;
     println!("Found filter by id <id:{:?}, name:{:?}>", r.id, r.name);
 
     match player_service
@@ -268,14 +295,10 @@ async fn main() -> anyhow::Result<()> {
         let id = rng.random_range(1..songs.len());
         match player_service
             .song
-            .get_by_id(&player_service.pool, id as i32)
+            .get_by_id(&player_service.pool, 331)
             .await
         {
-            Ok(_) => {
-                let r = player_service
-                    .song
-                    .get_by_id(&player_service.pool, id as i32)
-                    .await?;
+            Ok(r) => {
                 println!("playing <{:?}>{:?} by {:?}...", r.id, r.title, r.artist);
                 let _ = player_service.play(r.file_path.as_str(), 0.0).await;
                 println!("finished song");
