@@ -1,7 +1,8 @@
 use anyhow::Context;
+use async_trait::async_trait;
 use sqlx::{
-    Acquire, Database, Pool, Sqlite, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
+    Acquire, Database, Pool, Sqlite, SqlitePool,
 };
 use std::str::FromStr;
 
@@ -50,10 +51,11 @@ impl HasPool<Sqlite> for SqliteDb {
     }
 }
 
+#[async_trait]
 impl SongRepository<Sqlite> for SqliteDb {
     async fn add_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -80,7 +82,7 @@ impl SongRepository<Sqlite> for SqliteDb {
 
     async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -118,7 +120,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         max_results: i32,
     ) -> anyhow::Result<Vec<Song>>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE ",
@@ -147,7 +149,7 @@ impl SongRepository<Sqlite> for SqliteDb {
 
     async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -167,7 +169,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         artist: &str,
     ) -> anyhow::Result<Song>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -183,10 +185,11 @@ impl SongRepository<Sqlite> for SqliteDb {
     }
 }
 
+#[async_trait]
 impl FilterRepository<Sqlite> for SqliteDb {
     async fn add<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -199,7 +202,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
     }
     async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
         let filter = sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter")
@@ -212,7 +215,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
     //TODO: add name index?
     async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -227,7 +230,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
 
     async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -241,10 +244,11 @@ impl FilterRepository<Sqlite> for SqliteDb {
     }
 }
 
+#[async_trait]
 impl SongFilterRepository<Sqlite> for SqliteDb {
     async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -265,7 +269,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         song_filters: Vec<SongFilter>,
     ) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -285,7 +289,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
 
     async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -306,7 +310,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         filter_id: i32,
     ) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -323,7 +327,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
     //TODO: add song_id index?
     async fn get_by_song<'a, A>(&self, acquiree: A, song_id: i32) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -339,7 +343,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
 
     async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
 
@@ -353,10 +357,11 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
     }
 }
 
+#[async_trait]
 impl SettingRepository<Sqlite> for SqliteDb {
     async fn set<'a, A>(&self, acquiree: A, key: &str, value: &str) -> anyhow::Result<()>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut conn = acquiree.acquire().await?;
         let _ = sqlx::query("INSERT INTO setting (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = ($2) WHERE key = ($1);")
@@ -369,7 +374,7 @@ impl SettingRepository<Sqlite> for SqliteDb {
 
     async fn get<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<Setting>
     where
-        A: Acquire<'a, Database = Sqlite>,
+        A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut conn = acquiree.acquire().await?;
         Ok(sqlx::query_as::<sqlx::Sqlite, Setting>(
