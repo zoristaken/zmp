@@ -1,5 +1,3 @@
-use rand::prelude::*;
-
 use crate::config;
 use crate::filter;
 use crate::player;
