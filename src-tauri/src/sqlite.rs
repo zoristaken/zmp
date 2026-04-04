@@ -113,6 +113,69 @@ impl SongRepository<Sqlite> for SqliteDb {
             .collect())
     }
 
+    async fn search_by_db_alternative<'a, A>(
+        &self,
+        acquiree: A,
+        words: &[&str],
+        max_results: i32,
+    ) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT id, title, artist, release_year, album, remix, 
+            search_blob, file_path, duration FROM song WHERE ",
+        );
+        //TODO: after using the app, verify if searching by substrings actually happens
+        //I have a feeling we can improve the performance by moving to a prefix search
+        //without any side effects at all
+        for (i, word) in words.iter().enumerate() {
+            qb.push("title LIKE ");
+            qb.push_bind(format!("%{}%", word));
+            if i != words.len() - 1 {
+                qb.push(" AND ");
+            }
+        }
+        qb.push(" OR ");
+
+        for (i, word) in words.iter().enumerate() {
+            qb.push("artist LIKE ");
+            qb.push_bind(format!("%{}%", word));
+            if i != words.len() - 1 {
+                qb.push(" AND ");
+            }
+        }
+        qb.push(" OR ");
+
+        for (i, word) in words.iter().enumerate() {
+            qb.push("release_year LIKE ");
+            qb.push_bind(format!("%{}%", word));
+            if i != words.len() - 1 {
+                qb.push(" AND ");
+            }
+        }
+
+        qb.push(" OR ");
+
+        for (i, word) in words.iter().enumerate() {
+            qb.push("album LIKE ");
+            qb.push_bind(format!("%{}%", word));
+            if i != words.len() - 1 {
+                qb.push(" AND ");
+            }
+        }
+
+        qb.push(" LIMIT ");
+        qb.push_bind(max_results);
+
+        let conn = &mut *acquiree.acquire().await?;
+
+        let query = qb.build_query_as::<Song>();
+        let songs = query.fetch_all(conn).await?;
+
+        Ok(songs)
+    }
+
     async fn search_by_db<'a, A>(
         &self,
         acquiree: A,

@@ -60,6 +60,15 @@ where
     ) -> anyhow::Result<Vec<Song>>
     where
         A: Acquire<'a, Database = DB> + Send;
+
+    async fn search_by_db_alternative<'a, A>(
+        &self,
+        acquiree: A,
+        words: &[&str],
+        max_results: i32,
+    ) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = DB> + Send;
 }
 
 pub struct SongService<R, DB>
