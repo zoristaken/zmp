@@ -1,13 +1,11 @@
-use std::marker::PhantomData;
-
 use async_trait::async_trait;
 use serde::Serialize;
-use sqlx::Acquire;
+use sqlx::{Acquire, Database};
 
-use crate::sqlite::RepositoryDb;
+use crate::manager::HasPool;
 
 #[allow(dead_code)]
-#[derive(sqlx::FromRow, Debug, Clone, Serialize)]
+#[derive(sqlx::FromRow, Debug, Clone, Serialize, PartialEq)]
 pub struct Filter {
     pub id: i32,
     pub name: String,
@@ -32,21 +30,21 @@ pub trait FilterRepository<DB> {
 pub struct FilterService<R, DB>
 where
     R: FilterRepository<DB>,
-    DB: RepositoryDb,
+    DB: Database,
 {
+    pub pool: sqlx::Pool<DB>,
     repo: R,
-    _db: std::marker::PhantomData<DB>,
 }
 
 impl<R, DB> FilterService<R, DB>
 where
-    R: FilterRepository<DB>,
-    DB: RepositoryDb,
+    R: FilterRepository<DB> + HasPool<DB>,
+    DB: Database,
 {
     pub fn new(repo: R) -> Self {
         Self {
+            pool: repo.pool().clone(),
             repo,
-            _db: PhantomData,
         }
     }
 

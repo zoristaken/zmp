@@ -1,12 +1,14 @@
 use std::{io::BufReader, marker::PhantomData, path::Path};
 
+use sqlx::Database;
+
 use crate::{
     filter::{FilterRepository, FilterService},
+    manager::HasPool,
     metadata::MetadataParser,
     setting::{SettingRepository, SettingService},
     song::{SongRepository, SongService},
     song_filter::{SongFilterRepository, SongFilterService},
-    sqlite::{HasPool, RepositoryDb},
 };
 
 struct Player {}
@@ -34,7 +36,7 @@ impl Player {
 }
 pub struct PlayerService<S, So, F, Sf, DB>
 where
-    DB: RepositoryDb,
+    DB: Database,
     S: SettingRepository<DB>,
     So: SongRepository<DB>,
     F: FilterRepository<DB>,
@@ -52,7 +54,7 @@ where
 
 impl<R, DB> PlayerService<R, R, R, R, DB>
 where
-    DB: RepositoryDb,
+    DB: Database,
     R: SettingRepository<DB>
         + SongRepository<DB>
         + FilterRepository<DB>

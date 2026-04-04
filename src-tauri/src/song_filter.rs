@@ -1,12 +1,10 @@
-use std::marker::PhantomData;
-
 use async_trait::async_trait;
-use sqlx::Acquire;
+use sqlx::{Acquire, Database};
 
-use crate::sqlite::RepositoryDb;
+use crate::manager::HasPool;
 
 #[allow(dead_code)]
-#[derive(sqlx::FromRow, Debug, Clone)]
+#[derive(sqlx::FromRow, Debug, Clone, PartialEq)]
 pub struct SongFilter {
     pub id: i32,
     pub song_id: i32,
@@ -16,7 +14,7 @@ pub struct SongFilter {
 #[async_trait]
 pub trait SongFilterRepository<DB>
 where
-    DB: RepositoryDb,
+    DB: Database,
 {
     async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
     where
@@ -53,21 +51,21 @@ where
 pub struct SongFilterService<R, DB>
 where
     R: SongFilterRepository<DB>,
-    DB: RepositoryDb,
+    DB: Database,
 {
+    pub pool: sqlx::Pool<DB>,
     repo: R,
-    _db: std::marker::PhantomData<DB>,
 }
 
 impl<R, DB> SongFilterService<R, DB>
 where
-    R: SongFilterRepository<DB>,
-    DB: RepositoryDb,
+    R: SongFilterRepository<DB> + HasPool<DB>,
+    DB: Database,
 {
     pub fn new(repo: R) -> Self {
         Self {
+            pool: repo.pool().clone(),
             repo,
-            _db: PhantomData,
         }
     }
 

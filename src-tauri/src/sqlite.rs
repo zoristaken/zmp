@@ -2,26 +2,21 @@ use anyhow::Context;
 use async_trait::async_trait;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
-    Acquire, Database, Pool, Sqlite, SqlitePool,
+    Acquire, Pool, Sqlite, SqlitePool,
 };
 use std::str::FromStr;
 
 use crate::{
     filter::{Filter, FilterRepository},
+    manager::HasPool,
     setting::{Setting, SettingRepository},
     song::{Song, SongRepository},
     song_filter::{SongFilter, SongFilterRepository},
 };
 
-pub trait RepositoryDb: Database + Send + Sync + 'static {}
-
-pub trait HasPool<DB: RepositoryDb> {
-    fn pool(&self) -> &Pool<DB>;
-}
-
 #[derive(Clone)]
 pub struct SqliteDb {
-    pool: SqlitePool,
+    pub pool: SqlitePool,
 }
 
 impl SqliteDb {
@@ -42,8 +37,6 @@ impl SqliteDb {
         Ok(SqliteDb { pool })
     }
 }
-
-impl RepositoryDb for Sqlite {}
 
 impl HasPool<Sqlite> for SqliteDb {
     fn pool(&self) -> &Pool<Sqlite> {

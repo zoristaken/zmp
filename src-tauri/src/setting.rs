@@ -1,10 +1,8 @@
-use std::marker::PhantomData;
-
 use anyhow::Context;
 use async_trait::async_trait;
-use sqlx::Acquire;
+use sqlx::{Acquire, Database};
 
-use crate::sqlite::RepositoryDb;
+use crate::manager::HasPool;
 
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
@@ -31,7 +29,7 @@ pub struct Setting {
 #[async_trait]
 pub trait SettingRepository<DB>
 where
-    DB: RepositoryDb,
+    DB: Database,
 {
     async fn set<'a, A>(&self, executor: A, key: &str, value: &str) -> anyhow::Result<()>
     where
@@ -44,21 +42,21 @@ where
 pub struct SettingService<R, DB>
 where
     R: SettingRepository<DB>,
-    DB: RepositoryDb,
+    DB: Database,
 {
+    pub pool: sqlx::Pool<DB>,
     repo: R,
-    _db: std::marker::PhantomData<DB>,
 }
 
 impl<R, DB> SettingService<R, DB>
 where
-    R: SettingRepository<DB>,
-    DB: RepositoryDb,
+    R: SettingRepository<DB> + HasPool<DB>,
+    DB: Database,
 {
     pub fn new(repo: R) -> Self {
         Self {
+            pool: repo.pool().clone(),
             repo,
-            _db: PhantomData,
         }
     }
 
