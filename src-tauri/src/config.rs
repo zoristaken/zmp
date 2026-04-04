@@ -1,63 +1,35 @@
-use anyhow::anyhow;
-use std::env;
-use std::fs;
+use anyhow::Context;
 use std::path::PathBuf;
+use tauri::App;
+use tauri::Manager;
 
 const APP_NAME: &str = "zmp";
 const APP_NAME_DEV: &str = "zmp_dev";
-const HOME: &str = "HOME";
-const WINDOWS_DEFAULT_PATH: &str = "APPDATA";
-const MAC_DEFAULT_PATH: &str = "Library/Application Support";
-const XDG_DATA_HOME: &str = "X$XDG_DATA_HOMEE";
-const LINUX_LOCAL: &str = ".local/share";
-pub const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    pub config_path: String,
-    pub database_url: String,
+    pub config_path: PathBuf,
 }
 
 impl Config {
-    //if multiple databases could be used in the future, refactor code
-    //to take the type of dabase as an argument so you can generate
-    //the appropriate path or url
-    pub fn new() -> anyhow::Result<Config> {
-        let config_path = Config::get_or_create_config_dir()?;
-        let database_url: String;
-        if cfg!(debug_assertions) {
-            database_url = format!("sqlite:///{}/{}.db", config_path, APP_NAME_DEV);
-        } else {
-            database_url = format!("sqlite:///{}/{}.db", config_path, APP_NAME);
-        }
-
+    pub async fn new(app: &App) -> anyhow::Result<Config> {
         Ok(Config {
-            config_path: config_path,
-            database_url: database_url,
+            config_path: app
+                .path()
+                .app_data_dir()
+                .with_context(|| "failed to get data_dir")?,
         })
     }
 
-    fn get_or_create_config_dir() -> anyhow::Result<String> {
-        let config_dir = match env::consts::OS {
-            "windows" => env::var(WINDOWS_DEFAULT_PATH)
-                .map(PathBuf::from)
-                .map_err(|_| anyhow!("{} environment variable not set", WINDOWS_DEFAULT_PATH))?,
-            "macos" => env::var(HOME)
-                .map(|h| PathBuf::from(h).join(MAC_DEFAULT_PATH))
-                .map_err(|_| anyhow!("{} environment variable not set", HOME))?,
-            _ => {
-                // Linux/Unix
-                env::var(XDG_DATA_HOME)
-                    .map(PathBuf::from)
-                    .or_else(|_| env::var(HOME).map(|h| PathBuf::from(h).join(LINUX_LOCAL)))
-                    .map_err(|_| anyhow!("Could not determine config directory"))?
-            }
+    pub async fn db_path(&self) -> anyhow::Result<String> {
+        let path = self
+            .config_path
+            .to_str()
+            .with_context(|| "failed to get app path")?;
+
+        if cfg!(debug_assertions) {
+            return Ok(format!("sqlite:///{}/{}.db", path, APP_NAME_DEV));
         }
-        .join(APP_NAME);
-
-        fs::create_dir_all(&config_dir)
-            .map_err(|e| anyhow!("Failed to create config directory: {}", e))?;
-
-        Ok(config_dir.display().to_string())
+        Ok(format!("sqlite:///{}/{}.db", path, APP_NAME))
     }
 }

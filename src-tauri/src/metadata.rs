@@ -1,4 +1,4 @@
-use crate::{config::SUPPORTED_EXTENSIONS, song::Song};
+use crate::song::Song;
 use std::path::{Path, PathBuf};
 
 use id3::TagLike;
@@ -12,6 +12,8 @@ use lofty::{
     tag::{items::Timestamp, Accessor, ItemKey, Tag},
 };
 use walkdir::WalkDir;
+
+const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac"];
 
 #[derive(Debug)]
 struct SongMetadata {
