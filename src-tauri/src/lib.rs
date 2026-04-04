@@ -3,14 +3,14 @@ use tauri::Manager;
 use crate::{manager::AppState, sqlite::SqliteDb};
 
 mod config;
-mod filter;
+pub mod filter;
 mod manager;
 mod metadata;
 mod player;
-mod setting;
-mod song;
-mod song_filter;
-mod sqlite;
+pub mod setting;
+pub mod song;
+pub mod song_filter;
+pub mod sqlite;
 mod test;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
