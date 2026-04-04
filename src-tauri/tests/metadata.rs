@@ -169,7 +169,7 @@ fn parse_song_metadata_falls_back_only_for_missing_title() {
         Some("Burial"),
         Some("Untrue"),
         Some(2007),
-        None,
+        Some("zor"),
     );
 
     let parser = MetadataParser::new();
@@ -182,8 +182,8 @@ fn parse_song_metadata_falls_back_only_for_missing_title() {
     assert_eq!(song.artist, "Burial");
     assert_eq!(song.album, "Untrue");
     assert_eq!(song.release_year, 2007);
-    assert_eq!(song.remix, "");
-    assert_eq!(song.search_blob, "archangel burial untrue 2007");
+    assert_eq!(song.remix, "zor");
+    assert_eq!(song.search_blob, "archangel burial untrue 2007 zor");
 }
 
 #[test]
