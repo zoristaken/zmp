@@ -6,10 +6,9 @@ use lofty::file::AudioFile;
 use lofty::tag::TagType;
 
 use lofty::{
-    config::ParsingMode,
     file::TaggedFileExt,
     probe::Probe,
-    tag::{items::Timestamp, Accessor, ItemKey, Tag},
+    tag::{Accessor, ItemKey},
 };
 use walkdir::WalkDir;
 
@@ -69,7 +68,7 @@ impl MetadataParser {
         song.title = tag.title().map(|s| s.into_owned()).unwrap_or_default();
         song.genre = tag.genre().map(|s| s.into_owned());
         song.remix = tag.get_string(ItemKey::Remixer).map(|s| s.to_string());
-        song.year = Some(Self::get_date(tag).unwrap_or_default());
+        song.year = Some(tag.date().unwrap_or_default().year.into());
         song.duration = tagged_file.properties().duration().as_secs();
 
         if song.year.unwrap_or_default() == 0
@@ -90,22 +89,6 @@ impl MetadataParser {
             }
         }
         Ok(song)
-    }
-
-    fn get_date(tag: &Tag) -> Option<i32> {
-        let t = tag
-            .get_string(ItemKey::RecordingDate)
-            .or_else(|| tag.get_string(ItemKey::Year))
-            .or_else(|| tag.get_string(ItemKey::ReleaseDate))
-            .or_else(|| tag.get_string(ItemKey::OriginalReleaseDate))
-            .and_then(|d| {
-                Timestamp::parse(&mut d.as_bytes(), ParsingMode::Relaxed)
-                    .ok()
-                    .flatten()
-            })?
-            .year;
-
-        Some(t.into())
     }
 
     fn parse_filename_fallback(file_path: &Path) -> anyhow::Result<FallbackMetadata> {
@@ -181,5 +164,40 @@ impl MetadataParser {
             }
         }
         Ok(songs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn parse_filename_fallback_parses_artist_and_title() {
+        let path = Path::new("Massive Attack - Teardrop.mp3");
+
+        let result = MetadataParser::parse_filename_fallback(path).unwrap();
+
+        assert_eq!(result.artist, "Massive Attack");
+        assert_eq!(result.title, "Teardrop");
+    }
+
+    #[test]
+    fn parse_filename_fallback_trims_whitespace() {
+        let path = Path::new("  Massive Attack   -   Teardrop  .mp3");
+
+        let result = MetadataParser::parse_filename_fallback(path).unwrap();
+
+        assert_eq!(result.artist, "Massive Attack");
+        assert_eq!(result.title, "Teardrop");
+    }
+
+    #[test]
+    fn parse_filename_fallback_errors_when_separator_missing() {
+        let path = Path::new("Teardrop.mp3");
+
+        let result = MetadataParser::parse_filename_fallback(path);
+
+        assert!(result.is_err());
     }
 }
