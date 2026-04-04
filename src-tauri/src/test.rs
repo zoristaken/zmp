@@ -1,9 +1,8 @@
-use crate::config;
 use crate::filter;
+use crate::manager::AppState;
 use crate::player;
 use crate::song_filter::SongFilter;
 use crate::sqlite::HasPool;
-use crate::sqlite::SqliteDb;
 
 #[derive(Debug, serde::Serialize)]
 pub struct ErrorResponse {
@@ -19,9 +18,8 @@ impl From<anyhow::Error> for ErrorResponse {
 }
 
 #[tauri::command]
-pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
-    let config = config::Config::new();
-    let sqlite = SqliteDb::new(&config?.database_url).await?;
+pub async fn main_test(state: tauri::State<'_, AppState>) -> anyhow::Result<(), ErrorResponse> {
+    let sqlite = state.db.clone();
 
     let filter_service = filter::FilterService::new(sqlite.clone());
 
@@ -31,7 +29,7 @@ pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
     }
 
     //testing for now
-    let player_service = player::PlayerService::new(sqlite);
+    let player_service = player::PlayerService::new(sqlite.clone());
 
     player_service
         .setting
@@ -100,10 +98,11 @@ pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
         .setting
         .set_random_keybind(&player_service.pool, "f4")
         .await?;
+
     let random_kb = player_service
         .setting
         .get_random_keybind(&player_service.pool)
-        .await;
+        .await?;
 
     println!(
         "KEYBINDS\nnext:{:?}\nprevious:{:?}\nplay/stop:{:?}\nsettings:{:?}\nrandom:{:?}",
@@ -112,12 +111,23 @@ pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
 
     player_service.process_music_folder().await?;
 
+    player_service
+        .setting
+        .set_last_search_str(&player_service.pool, "komm juju")
+        .await?;
+
+    let search_str = player_service
+        .setting
+        .get_last_search_str(&player_service.pool)
+        .await?;
+
     let songs = player_service.song.list_songs(&player_service.pool).await?;
     // for s in &songs {
     //     println!("All songs list id: {:#?}", s.id);
     // }
 
-    let searchable = &["komm", "juju"];
+    let s: Vec<&str> = search_str.split(" ").collect();
+    let searchable = &s;
     let max_results: i32 = 10;
     let r = player_service
         .song
@@ -132,6 +142,11 @@ pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
         .song
         .search_by_db(&player_service.pool, searchable, max_results)
         .await?;
+
+    let _ = player_service
+        .song
+        .search_by_db_alternative(&player_service.pool, searchable, 10)
+        .await;
 
     for s in r {
         println!("2 Songs List: {:#?}", s);
@@ -342,7 +357,7 @@ pub async fn main_test() -> anyhow::Result<(), ErrorResponse> {
 //TODO:
 // read modules
 // move tests into actual tests (perhaps db mocks + actual dev db test)
-// add actual error logic + remove .unwrap()
-// try local web?
-// add frontend
-// make tauri alternative
+// add actual error logic
+// build a proper player struct
+// add frontend and tauri commands
+// add actual missing backend -> frontend implementations
