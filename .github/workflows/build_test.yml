@@ -37,7 +37,7 @@ jobs:
       
       - name: Run cargo tests
         run: cargo test --all-features
-        working-directory: zmp/src-tauri
+        working-directory: src-tauri
 
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
