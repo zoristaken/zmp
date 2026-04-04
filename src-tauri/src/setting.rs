@@ -12,6 +12,7 @@ const VOLUME_VALUE: &str = "volume_value";
 const SEARCH_BLOB: &str = "search_blob";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
+const LAST_SEARCH_STR: &str = "last_search_str";
 const SETTINGS_KEYBIND: &str = "settings_kb";
 const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
@@ -100,10 +101,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self
-            .get(executor, SEARCH_BLOB)
-            .await
-            .with_context(|| format!("Failed to get {} value", SEARCH_BLOB))?;
+        let setting = self.get(executor, SEARCH_BLOB).await?;
 
         Ok(setting.value)
     }
@@ -179,10 +177,23 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self
-            .get(executor, SETTINGS_KEYBIND)
-            .await
-            .with_context(|| format!("Failed to get {} keybind", SETTINGS_KEYBIND))?;
+        let setting = self.get(executor, SETTINGS_KEYBIND).await?;
+
+        Ok(setting.value)
+    }
+
+    pub async fn set_last_search_str<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, LAST_SEARCH_STR, key).await
+    }
+
+    pub async fn get_last_search_str<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let setting = self.get(executor, LAST_SEARCH_STR).await?;
 
         Ok(setting.value)
     }
@@ -198,10 +209,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self
-            .get(executor, RANDOM_KEYBIND)
-            .await
-            .with_context(|| format!("Failed to get {} keybind", RANDOM_KEYBIND))?;
+        let setting = self.get(executor, RANDOM_KEYBIND).await?;
 
         Ok(setting.value)
     }
@@ -217,10 +225,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self
-            .get(executor, PREVIOUS_KEYBIND)
-            .await
-            .with_context(|| format!("Failed to get {} keybind", PREVIOUS_KEYBIND))?;
+        let setting = self.get(executor, PREVIOUS_KEYBIND).await?;
 
         Ok(setting.value)
     }
@@ -236,10 +241,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self
-            .get(executor, NEXT_KEYBIND)
-            .await
-            .with_context(|| format!("Failed to get {} keybind", NEXT_KEYBIND))?;
+        let setting = self.get(executor, NEXT_KEYBIND).await?;
 
         Ok(setting.value)
     }
@@ -255,10 +257,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self
-            .get(executor, PLAY_STOP_KEYBIND)
-            .await
-            .with_context(|| format!("Failed to get {} keybind", PLAY_STOP_KEYBIND))?;
+        let setting = self.get(executor, PLAY_STOP_KEYBIND).await?;
 
         Ok(setting.value)
     }
@@ -288,13 +287,19 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.set(executor, key, value).await
+        self.repo
+            .set(executor, key, value)
+            .await
+            .with_context(|| format!("Failed to set (key, value): ({},{})", key, value))
     }
 
     async fn get<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<Setting>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get(executor, key).await
+        self.repo
+            .get(executor, key)
+            .await
+            .with_context(|| format!("Failed to get key: {}", LAST_SEARCH_STR))
     }
 }
