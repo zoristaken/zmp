@@ -60,9 +60,9 @@ impl SongRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         for val in songs {
-            let _ = sqlx::query(
+            sqlx::query(
             "INSERT OR IGNORE INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(val.title.clone())
         .bind(val.artist.clone())
@@ -74,7 +74,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         .bind(val.duration.clone())
         .execute(&mut *conn)
         .await
-        .expect(format!("failed inserting: {:#?}", val).as_str());
+        .with_context(|| format!("failed inserting: {:#?}", val))?;
         }
 
         Ok(())
@@ -103,11 +103,7 @@ impl SongRepository<Sqlite> for SqliteDb {
     ) -> anyhow::Result<Vec<Song>> {
         Ok(songs
             .iter()
-            .filter(|s| {
-                search
-                    .iter()
-                    .all(|x| !x.is_empty() && s.search_blob.contains(x))
-            })
+            .filter(|s| search.iter().all(|x| s.search_blob.contains(x)))
             .take(max_results)
             .cloned()
             .collect())
@@ -126,9 +122,8 @@ impl SongRepository<Sqlite> for SqliteDb {
             "SELECT id, title, artist, release_year, album, remix, 
             search_blob, file_path, duration FROM song WHERE ",
         );
-        //TODO: after using the app, verify if searching by substrings actually happens
-        //I have a feeling we can improve the performance by moving to a prefix search
-        //without any side effects at all
+
+        qb.push("(");
         for (i, word) in words.iter().enumerate() {
             qb.push("title LIKE ");
             qb.push_bind(format!("%{}%", word));
@@ -136,8 +131,9 @@ impl SongRepository<Sqlite> for SqliteDb {
                 qb.push(" AND ");
             }
         }
-        qb.push(" OR ");
+        qb.push(")");
 
+        qb.push(" OR (");
         for (i, word) in words.iter().enumerate() {
             qb.push("artist LIKE ");
             qb.push_bind(format!("%{}%", word));
@@ -145,8 +141,9 @@ impl SongRepository<Sqlite> for SqliteDb {
                 qb.push(" AND ");
             }
         }
-        qb.push(" OR ");
+        qb.push(")");
 
+        qb.push(" OR (");
         for (i, word) in words.iter().enumerate() {
             qb.push("release_year LIKE ");
             qb.push_bind(format!("%{}%", word));
@@ -154,9 +151,9 @@ impl SongRepository<Sqlite> for SqliteDb {
                 qb.push(" AND ");
             }
         }
+        qb.push(")");
 
-        qb.push(" OR ");
-
+        qb.push(" OR (");
         for (i, word) in words.iter().enumerate() {
             qb.push("album LIKE ");
             qb.push_bind(format!("%{}%", word));
@@ -164,6 +161,7 @@ impl SongRepository<Sqlite> for SqliteDb {
                 qb.push(" AND ");
             }
         }
+        qb.push(")");
 
         qb.push(" LIMIT ");
         qb.push_bind(max_results);
@@ -256,7 +254,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
     {
         let conn = &mut *acquiree.acquire().await?;
 
-        let _ = sqlx::query("INSERT INTO filter (name) VALUES ($1);")
+        sqlx::query("INSERT INTO filter (name) VALUES (?)")
             .bind(name)
             .execute(conn)
             .await?;
@@ -317,7 +315,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
 
         sqlx::query(
             "INSERT INTO song_filter (song_id, filter_id)
-                    VALUES ($1, $2)",
+                    VALUES (?, ?)",
         )
         .bind(song_filter.song_id)
         .bind(song_filter.filter_id)
@@ -337,9 +335,9 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         for val in song_filters {
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO song_filter (song_id, filter_id)
-                    VALUES ($1, $2)",
+                    VALUES (?, ?)",
             )
             .bind(val.song_id)
             .bind(val.filter_id)
@@ -427,11 +425,11 @@ impl SettingRepository<Sqlite> for SqliteDb {
         A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut conn = acquiree.acquire().await?;
-        let _ = sqlx::query("INSERT INTO setting (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = ($2) WHERE key = ($1);")
+        sqlx::query("INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
                     .bind(key)
                     .bind(value)
                     .execute(&mut *conn)
-                    .await;
+                    .await?;
         Ok(())
     }
 

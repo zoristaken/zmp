@@ -92,39 +92,37 @@ where
         }
     }
 
-    pub async fn add_songs<'a, A>(&self, acquireee: A, songs: Vec<Song>) -> anyhow::Result<()>
+    pub async fn add_songs<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.add_all(acquireee, songs).await
+        self.repo.add_all(acquiree, songs).await
     }
 
-    pub async fn list_songs<'a, A>(&self, acquireee: A) -> anyhow::Result<Vec<Song>>
+    pub async fn list_songs<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_all(acquireee).await
+        self.repo.get_all(acquiree).await
     }
 
-    pub async fn get_by_id<'a, A>(&self, acquireee: A, id: i32) -> anyhow::Result<Song>
+    pub async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_by_id(acquireee, id).await
+        self.repo.get_by_id(acquiree, id).await
     }
 
     pub async fn get_by_title_artist<'a, A>(
         &self,
-        acquireee: A,
+        acquiree: A,
         title: &str,
         artist: &str,
     ) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo
-            .get_by_title_artist(acquireee, title, artist)
-            .await
+        self.repo.get_by_title_artist(acquiree, title, artist).await
     }
 
     pub async fn search_by(
@@ -138,7 +136,7 @@ where
 
     pub async fn search_by_db<'a, A>(
         &self,
-        acquireee: A,
+        acquiree: A,
         words: &[&str],
         max_results: i32,
     ) -> anyhow::Result<Vec<Song>>
@@ -149,6 +147,20 @@ where
             return Ok(vec![]);
         }
 
-        self.repo.search_by_db(acquireee, words, max_results).await
+        self.repo.search_by_db(acquiree, words, max_results).await
+    }
+
+    pub async fn search_by_db_alternative<'a, A>(
+        &self,
+        acquiree: A,
+        words: &[&str],
+        max_results: i32,
+    ) -> anyhow::Result<Vec<Song>>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo
+            .search_by_db_alternative(acquiree, words, max_results)
+            .await
     }
 }

@@ -300,6 +300,6 @@ where
         self.repo
             .get(executor, key)
             .await
-            .with_context(|| format!("Failed to get key: {}", LAST_SEARCH_STR))
+            .with_context(|| format!("Failed to get key: {}", key))
     }
 }
