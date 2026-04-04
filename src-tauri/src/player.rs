@@ -1,107 +1,58 @@
-use std::{io::BufReader, marker::PhantomData, path::Path};
+use std::{io::BufReader, time::Duration};
 
-use sqlx::Database;
+use rodio::decoder;
 
-use crate::{
-    filter::{FilterRepository, FilterService},
-    manager::HasPool,
-    metadata::MetadataParser,
-    setting::{SettingRepository, SettingService},
-    song::{SongRepository, SongService},
-    song_filter::{SongFilterRepository, SongFilterService},
-};
+use crate::song::Song;
 
-struct Player {}
+pub struct Player {
+    _stream_handle: rodio::MixerDeviceSink,
+    player: rodio::Player,
+}
 
 impl Player {
     pub fn new() -> Self {
-        Self {}
-    }
+        let stream_handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
+        let player = rodio::Player::connect_new(&stream_handle.mixer());
 
-    //testing functionality for now
-    pub fn play(&self, file_path: &str, volume: rodio::Float) -> anyhow::Result<()> {
-        let stream_handle = rodio::DeviceSinkBuilder::open_default_sink()?;
-        let mixer = stream_handle.mixer();
-
-        let file = std::fs::File::open(file_path)?;
-        let player = rodio::play(mixer, BufReader::new(file))?;
-        player.set_volume(volume);
-
-        println!("playing with volume of {:?}", volume);
-
-        player.play();
-        player.sleep_until_end();
-        Ok(())
-    }
-}
-pub struct PlayerService<S, So, F, Sf, DB>
-where
-    DB: Database,
-    S: SettingRepository<DB>,
-    So: SongRepository<DB>,
-    F: FilterRepository<DB>,
-    Sf: SongFilterRepository<DB>,
-{
-    pub setting: SettingService<S, DB>,
-    pub song: SongService<So, DB>,
-    pub filter: FilterService<F, DB>,
-    pub song_filter: SongFilterService<Sf, DB>,
-    pub metadata_parser: MetadataParser,
-    player: Player,
-    pub pool: sqlx::Pool<DB>,
-    _db: std::marker::PhantomData<DB>,
-}
-
-impl<R, DB> PlayerService<R, R, R, R, DB>
-where
-    DB: Database,
-    R: SettingRepository<DB>
-        + SongRepository<DB>
-        + FilterRepository<DB>
-        + SongFilterRepository<DB>
-        + HasPool<DB>
-        + Clone,
-{
-    pub fn new(repos: R) -> Self {
         Self {
-            setting: SettingService::new(repos.clone()),
-            song: SongService::new(repos.clone()),
-            filter: FilterService::new(repos.clone()),
-            song_filter: SongFilterService::new(repos.clone()),
-            metadata_parser: MetadataParser::new(),
-            player: Player::new(),
-            pool: repos.pool().clone(),
-            _db: PhantomData,
+            _stream_handle: stream_handle,
+            player: player,
         }
     }
 
-    pub async fn process_music_folder(&self) -> anyhow::Result<()> {
-        if !self.setting.has_processed_music_folder(&self.pool).await {
-            let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
-            let songs = self
-                .metadata_parser
-                .parse_song_metadata(Path::new(&folder_path))?;
+    pub fn fresh_queue(&self, songs: Vec<Song>) -> anyhow::Result<()> {
+        self.player.clear();
+        for song in songs {
+            let file = std::fs::File::open(song.file_path)?;
+            let reader = BufReader::new(file);
+            let source = decoder::Decoder::new(reader)?;
+            self.player.append(source);
+        }
+        self.player.play();
+        self.player.sleep_until_end();
+        Ok(())
+    }
 
-            let mut tx = self.pool.begin().await?;
-            self.setting
-                .set_processed_music_folder(&mut tx, true)
-                .await?;
-            self.song.add_songs(&mut tx, songs).await?;
-            tx.commit().await?
+    pub fn play_pause(&self) {
+        if self.player.is_paused() {
+            self.player.play();
         } else {
-            println!("already processed music folder")
+            self.player.pause();
         }
-        Ok(())
     }
 
-    pub async fn play(&self, file_path: &str, volume: rodio::Float) -> anyhow::Result<()> {
-        if volume == 0.0 {
-            let saved_volume = self.setting.get_saved_volume_value(&self.pool).await;
-            self.player.play(file_path, saved_volume)?;
-            return Ok(());
-        }
+    pub fn next(&self) {
+        self.player.skip_one();
+    }
 
-        self.player.play(file_path, volume)?;
-        Ok(())
+    //TODO: need to implement logic to keep previously played songs
+    pub fn previous(&self) {}
+
+    pub fn set_volume(&self, volume: rodio::Float) {
+        self.player.set_volume(volume.clamp(0.0, 1.0));
+    }
+
+    pub fn seek(&self, abs_pos: Duration) -> anyhow::Result<()> {
+        Ok(self.player.try_seek(abs_pos)?)
     }
 }
