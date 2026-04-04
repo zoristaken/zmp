@@ -1,8 +1,9 @@
-use crate::filter;
-use crate::manager::AppState;
-use crate::player;
-use crate::song_filter::SongFilter;
-use crate::sqlite::HasPool;
+use crate::{
+    filter,
+    manager::{AppState, HasPool},
+    player,
+    song_filter::SongFilter,
+};
 
 #[derive(Debug, serde::Serialize)]
 pub struct ErrorResponse {
