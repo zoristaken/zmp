@@ -1,6 +1,11 @@
+use std::sync::atomic::AtomicBool;
+
 use tauri::Manager;
 
-use crate::{manager::AppState, sqlite::SqliteDb};
+use crate::{
+    manager::{AppState, PlayerManager},
+    sqlite::SqliteDb,
+};
 
 mod config;
 pub mod filter;
@@ -23,8 +28,10 @@ pub fn run() {
                 let config = config::Config::new(&app).await.unwrap();
                 let path = config.db_path().await.unwrap();
                 let sqlite = SqliteDb::new(&path).await.unwrap();
-
-                app.manage(AppState { db: sqlite });
+                app.manage(AppState {
+                    first_time: AtomicBool::new(true),
+                    zmp: PlayerManager::new(sqlite.clone()),
+                });
             });
             Ok(())
         })
