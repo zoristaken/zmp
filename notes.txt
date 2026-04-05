@@ -79,3 +79,9 @@ body with current songs
 borrom row with play/stop/next/previous/loop/random, etc
 
 
+TODO:
+- read modules
+- add actual error logic
+- add frontend and tauri commands
+- add actual missing backend -> frontend implementations
+

@@ -1,4 +1,4 @@
-use std::{path::Path, sync::atomic::AtomicBool};
+use std::{path::Path, sync::Mutex};
 
 use sqlx::{Database, Pool, Sqlite};
 
@@ -7,14 +7,13 @@ use crate::{
     metadata::MetadataParser,
     player::Player,
     setting::{SettingRepository, SettingService},
-    song::{SongRepository, SongService},
+    song::{Song, SongRepository, SongService},
     song_filter::{SongFilterRepository, SongFilterService},
     sqlite::SqliteDb,
 };
 
-//pub type AppPlayerManager = PlayerManager<SqliteDb, SqliteDb, SqliteDb, SqliteDb, Sqlite>;
 pub struct AppState {
-    pub first_time: AtomicBool,
+    pub loaded_songs: Mutex<Vec<Song>>,
     pub zmp: PlayerManager<SqliteDb, Sqlite>,
 }
 
@@ -36,7 +35,7 @@ where
     pub filter: FilterService<R, DB>,
     pub song_filter: SongFilterService<R, DB>,
     pub metadata_parser: MetadataParser,
-    pub player: Player,
+    pub player: Mutex<Player>,
     pub pool: sqlx::Pool<DB>,
 }
 
@@ -57,7 +56,7 @@ where
             filter: FilterService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
-            player: Player::new(),
+            player: Mutex::new(Player::new()),
             pool: repos.pool().clone(),
         }
     }

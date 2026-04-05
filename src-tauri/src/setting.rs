@@ -16,7 +16,7 @@ const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
 const RANDOM_KEYBIND: &str = "random_kb";
-const DEFAULT_VOLUME: rodio::Float = 0.5;
+pub const DEFAULT_VOLUME: rodio::Float = 0.5;
 
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
