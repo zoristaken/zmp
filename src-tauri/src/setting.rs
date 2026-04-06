@@ -18,6 +18,7 @@ const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
 const RANDOM_KEYBIND: &str = "random_kb";
 const INDEX_VALUE: &str = "index_value";
+const CURRENT_SEEK_VALUE: &str = "current_seek_value";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
 
 #[allow(dead_code)]
@@ -132,6 +133,28 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.set(executor, INDEX_VALUE, &index.to_string()).await
+    }
+
+    pub async fn get_current_song_seek<'a, A>(&self, executor: A) -> usize
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self.get(executor, CURRENT_SEEK_VALUE).await {
+            Ok(setting) => setting.value.parse::<usize>().unwrap_or(0),
+            Err(_) => 0,
+        }
+    }
+
+    pub async fn set_current_song_current_seek<'a, A>(
+        &self,
+        executor: A,
+        value: usize,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, CURRENT_SEEK_VALUE, &value.to_string())
+            .await
     }
 
     pub async fn get_saved_volume_value<'a, A>(&self, executor: A) -> rodio::Float

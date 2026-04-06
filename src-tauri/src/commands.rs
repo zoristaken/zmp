@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -14,14 +16,29 @@ fn emit_track_changed(app: &AppHandle, current_index: Option<usize>) -> Result<(
         .map_err(|e| e.to_string())
 }
 
+//TODO: temporary mock of what a setup would look like
 #[tauri::command]
 pub async fn init(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let now = Instant::now();
+
+    //select music folder path
+    state
+        .zmp
+        .setting
+        .set_music_folder_path(&state.zmp.pool, "/home/z/Music")
+        .await
+        .map_err(|e| e.to_string())?;
+
+    //...?
+    //process music folder
     state
         .zmp
         .process_music_folder()
         .await
         .map_err(|e| e.to_string())?;
 
+    let elapsed = now.elapsed();
+    println!("Init elapsed: {:.2?}", elapsed);
     Ok(())
 }
 
@@ -30,6 +47,8 @@ pub async fn load(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<usize, String> {
+    let now = Instant::now();
+
     let saved_search = state
         .zmp
         .setting
@@ -83,6 +102,9 @@ pub async fn load(
     };
 
     emit_track_changed(&app, current_index)?;
+
+    let elapsed = now.elapsed();
+    println!("Loading elapsed: {:.2?}", elapsed);
     Ok(count)
 }
 
@@ -268,7 +290,33 @@ pub async fn previous_song(
 }
 
 #[tauri::command]
-pub async fn get_volume(state: tauri::State<'_, AppState>) -> Result<f32, String> {
+pub async fn get_current_song_seek(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_current_song_seek(&state.zmp.pool)
+        .await;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_current_song_current_seek(
+    state: tauri::State<'_, AppState>,
+    seek_value: usize,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_current_song_current_seek(&state.zmp.pool, seek_value)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_volume(state: tauri::State<'_, AppState>) -> Result<rodio::Float, String> {
     let volume = state
         .zmp
         .setting

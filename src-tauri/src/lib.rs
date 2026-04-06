@@ -35,6 +35,8 @@ pub fn run() {
             commands::previous_song,
             commands::get_is_paused,
             commands::play_pause,
+            commands::get_current_song_seek,
+            commands::set_current_song_current_seek,
             commands::get_volume,
             commands::set_volume,
             commands::get_random,
