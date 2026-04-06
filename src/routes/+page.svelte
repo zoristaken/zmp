@@ -2,6 +2,18 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
+  import {
+    Play,
+    Pause,
+    SkipBack,
+    SkipForward,
+    Shuffle,
+    Repeat,
+    Volume2,
+    Volume1,
+    VolumeX,
+    Search,
+  } from "lucide-svelte";
 
   type Song = {
     id: number;
@@ -81,7 +93,7 @@
 
       if (currentSeekSeconds < currentSong.duration) {
         currentSeekSeconds += 1;
-        void saveSeekProgress();
+        //void saveSeekProgress();
         return;
       }
 
@@ -378,7 +390,8 @@
           on:keydown={handleSearchKeydown}
         />
         <button class="search-button" on:click={() => performSearch(true)}>
-          Search
+          <Search size={16} />
+          <span>Search</span>
         </button>
       </div>
     </div>
@@ -462,34 +475,52 @@
           <button
             on:click={shuffle}
             class:active={isShuffle}
-            class="control-button"
+            class="control-button secondary"
             title="Shuffle"
+            aria-label="Shuffle"
           >
-            🔀
+            <Shuffle size={18} strokeWidth={2.2} />
           </button>
-          <button on:click={previous} class="control-button" title="Previous">
-            ⏮
+
+          <button
+            on:click={previous}
+            class="control-button secondary"
+            title="Previous"
+            aria-label="Previous"
+          >
+            <SkipBack size={19} strokeWidth={2.2} />
           </button>
+
           <button
             class="control-button play"
             on:click={play}
             title={isPlaying ? "Pause" : "Play"}
+            aria-label={isPlaying ? "Pause" : "Play"}
           >
-            {isPlaying ? "⏸" : "▶"}
+            {#if isPlaying}
+              <Pause size={20} strokeWidth={2.6} fill="currentColor" />
+            {:else}
+              <Play size={20} strokeWidth={2.6} fill="currentColor" />
+            {/if}
           </button>
-          <button on:click={next} class="control-button" title="Next">⏭</button
+
+          <button
+            on:click={next}
+            class="control-button secondary"
+            title="Next"
+            aria-label="Next"
           >
+            <SkipForward size={19} strokeWidth={2.2} />
+          </button>
+
           <button
             on:click={repeat}
             class:active={isRepeat}
-            class="control-button"
+            class="control-button secondary"
             title="Repeat"
+            aria-label="Repeat"
           >
-            {#if isRepeat}
-              🔂
-            {:else}
-              🔁
-            {/if}
+            <Repeat size={18} strokeWidth={2.2} />
           </button>
         </div>
 
@@ -525,13 +556,18 @@
       </div>
 
       <div class="volume">
-        <button class="volume-button" on:click={toggleMute} title="Mute">
+        <button
+          class="volume-button"
+          on:click={toggleMute}
+          title="Mute"
+          aria-label="Mute"
+        >
           {#if isMuted || volume === 0}
-            🔇
+            <VolumeX size={18} strokeWidth={2.2} />
           {:else if volume < 50}
-            🔉
+            <Volume1 size={18} strokeWidth={2.2} />
           {:else}
-            🔊
+            <Volume2 size={18} strokeWidth={2.2} />
           {/if}
         </button>
 
@@ -624,10 +660,13 @@
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 600;
-    padding: 0.85rem 1.25rem;
+    padding: 0.8rem 1.1rem;
     width: auto;
     height: auto;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
     transition:
       background 0.18s ease,
       border-color 0.18s ease,
@@ -818,7 +857,7 @@
 
   .controls {
     display: flex;
-    gap: 0.75rem;
+    gap: 0.55rem;
     align-items: center;
     justify-content: center;
     flex-wrap: nowrap;
@@ -826,60 +865,53 @@
 
   .control-button,
   .volume-button {
-    border: 1px solid #2f2f2f;
-    border-radius: 999px;
-    background: linear-gradient(180deg, #242424 0%, #1d1d1d 100%);
-    color: #d4d4d4;
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: #b3b3b3;
     cursor: pointer;
-    font-size: 1.05rem;
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.04),
-      0 1px 2px rgba(0, 0, 0, 0.28);
+    display: grid;
+    place-items: center;
     transition:
-      background 0.18s ease,
-      border-color 0.18s ease,
-      color 0.18s ease,
-      transform 0.18s ease,
-      box-shadow 0.18s ease;
+      color 0.16s ease,
+      transform 0.16s ease,
+      background-color 0.16s ease,
+      opacity 0.16s ease;
   }
 
-  .control-button:hover,
+  .control-button.secondary {
+    width: 36px;
+    height: 36px;
+  }
+
+  .control-button.secondary:hover,
   .volume-button:hover {
-    background: linear-gradient(180deg, #2a2a2a 0%, #222 100%);
-    border-color: #434343;
-    color: #f0f0f0;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 3px 10px rgba(0, 0, 0, 0.2);
+    color: #ffffff;
+    transform: scale(1.06);
+  }
+
+  .control-button.secondary.active {
+    color: #1db954;
+  }
+
+  .control-button.play {
+    width: 50px;
+    height: 50px;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #111111;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+  }
+
+  .control-button.play:hover {
+    background: #f8f8f8;
+    color: #000000;
+    transform: scale(1.06);
   }
 
   .control-button:active,
   .volume-button:active {
-    transform: scale(0.97);
-  }
-
-  .control-button.play {
-    width: 54px;
-    height: 54px;
-    font-size: 1.3rem;
-    background: linear-gradient(180deg, #f0f0f0 0%, #d9d9d9 100%);
-    color: #111;
-    border-color: #cfcfcf;
-  }
-
-  .control-button.play:hover {
-    background: linear-gradient(180deg, #fafafa 0%, #e5e5e5 100%);
-    color: #000;
-    border-color: #e6e6e6;
-  }
-
-  .control-button.active {
-    background: linear-gradient(180deg, #2f3a33 0%, #263129 100%);
-    border-color: #45644e;
-    color: #bfe3c9;
+    transform: scale(0.96);
   }
 
   .seek-row {
@@ -907,6 +939,11 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+  }
+
+  .volume-button {
+    width: 36px;
+    height: 36px;
   }
 
   .volume input {
