@@ -10,13 +10,15 @@ const VOLUME_VALUE: &str = "volume_value";
 const SEARCH_BLOB: &str = "search_blob";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
-const LAST_SEARCH_STR: &str = "last_search_str";
+const PLAY_PAUSE_FLAG: &str = "play_pause_flag";
 const SETTINGS_KEYBIND: &str = "settings_kb";
 const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
 const RANDOM_KEYBIND: &str = "random_kb";
-const DEFAULT_VOLUME: rodio::Float = 0.5;
+const INDEX_VALUE: &str = "index_value";
+const CURRENT_SEEK_VALUE: &str = "current_seek_value";
+pub const DEFAULT_VOLUME: rodio::Float = 0.5;
 
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
@@ -115,6 +117,45 @@ where
         self.set(executor, SEARCH_BLOB, search_blob).await
     }
 
+    pub async fn get_saved_index<'a, A>(&self, executor: A) -> usize
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self.get(executor, INDEX_VALUE).await {
+            Ok(setting) => setting.value.parse::<usize>().unwrap_or(0),
+            Err(_) => 0,
+        }
+    }
+
+    pub async fn set_saved_index<'a, A>(&self, executor: A, index: usize) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, INDEX_VALUE, &index.to_string()).await
+    }
+
+    pub async fn get_current_song_seek<'a, A>(&self, executor: A) -> usize
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self.get(executor, CURRENT_SEEK_VALUE).await {
+            Ok(setting) => setting.value.parse::<usize>().unwrap_or(0),
+            Err(_) => 0,
+        }
+    }
+
+    pub async fn set_current_song_seek<'a, A>(
+        &self,
+        executor: A,
+        value: usize,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, CURRENT_SEEK_VALUE, &value.to_string())
+            .await
+    }
+
     pub async fn get_saved_volume_value<'a, A>(&self, executor: A) -> rodio::Float
     where
         A: Acquire<'a, Database = DB> + Send,
@@ -180,20 +221,25 @@ where
         Ok(setting.value)
     }
 
-    pub async fn set_last_search_str<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_play_pause_flag<'a, A>(&self, executor: A, playing: bool) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, LAST_SEARCH_STR, key).await
+        if playing {
+            self.set(executor, PLAY_PAUSE_FLAG, "true").await
+        } else {
+            self.set(executor, PLAY_PAUSE_FLAG, "false").await
+        }
     }
 
-    pub async fn get_last_search_str<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn is_playing<'a, A>(&self, executor: A) -> bool
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, LAST_SEARCH_STR).await?;
-
-        Ok(setting.value)
+        match self.get(executor, PLAY_PAUSE_FLAG).await {
+            Ok(setting) => return setting.value == "true",
+            Err(_) => return false,
+        }
     }
 
     pub async fn set_random_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>

@@ -79,3 +79,10 @@ body with current songs
 borrom row with play/stop/next/previous/loop/random, etc
 
 
+TODO:
+- read modules
+- add actual logging messages (instead of printing all over)
+- add actual error logic
+- add filter logic to tauri commands and frontend
+- add first setup window + settings button with similar setup
+

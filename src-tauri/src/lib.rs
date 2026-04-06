@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 
 use tauri::Manager;
 
@@ -7,6 +7,7 @@ use crate::{
     sqlite::SqliteDb,
 };
 
+mod commands;
 mod config;
 pub mod filter;
 mod manager;
@@ -16,21 +17,44 @@ pub mod setting;
 pub mod song;
 pub mod song_filter;
 pub mod sqlite;
-mod test;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![test::main_test])
+        .invoke_handler(tauri::generate_handler![
+            commands::init,
+            commands::load,
+            commands::search_songs,
+            commands::get_current_index,
+            commands::get_current_song,
+            commands::get_saved_search_blob,
+            commands::get_loaded_songs,
+            commands::play_song_at,
+            commands::next_song,
+            commands::previous_song,
+            commands::get_is_paused,
+            commands::play_pause,
+            commands::get_current_song_seek,
+            commands::set_current_song_seek,
+            commands::save_current_song_seek,
+            commands::get_play_pause,
+            commands::set_play_pause,
+            commands::get_volume,
+            commands::set_volume,
+            commands::get_random,
+            commands::set_random,
+            commands::get_repeat,
+            commands::set_repeat,
+        ])
         .setup(|app| {
             tauri::async_runtime::block_on(async move {
                 let config = config::Config::new(&app).await.unwrap();
                 let path = config.db_path().await.unwrap();
                 let sqlite = SqliteDb::new(&path).await.unwrap();
                 app.manage(AppState {
-                    first_time: AtomicBool::new(true),
-                    zmp: PlayerManager::new(sqlite.clone()),
+                    loaded_songs: Mutex::new(Vec::new()),
+                    zmp: PlayerManager::new(sqlite.clone()).await,
                 });
             });
             Ok(())
