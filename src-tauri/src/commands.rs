@@ -74,6 +74,8 @@ pub async fn load(
         .get_current_song_seek(&state.zmp.pool)
         .await;
 
+    let saved_play_pause_flag = state.zmp.setting.is_playing(&state.zmp.pool).await;
+
     let count = songs.len();
 
     {
@@ -92,7 +94,9 @@ pub async fn load(
 
         if !songs.is_empty() {
             let index = saved_index.min(songs.len() - 1);
-            player.play_song_at(index).map_err(|e| e.to_string())?;
+            player
+                .play_song_at(index, saved_play_pause_flag)
+                .map_err(|e| e.to_string())?;
 
             if saved_seek > 0 {
                 player
@@ -162,7 +166,9 @@ pub async fn play_song_at(
     let current_index = {
         let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
         player.set_queue(songs).map_err(|e| e.to_string())?;
-        player.play_song_at(index).map_err(|e| e.to_string())?;
+        player
+            .play_song_at(index, true)
+            .map_err(|e| e.to_string())?;
         player.current_index()
     };
 

@@ -226,10 +226,8 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         if playing {
-            println!("db set_play_pause_flag: true");
             self.set(executor, PLAY_PAUSE_FLAG, "true").await
         } else {
-            println!("db set_play_pause_flag: false");
             self.set(executor, PLAY_PAUSE_FLAG, "false").await
         }
     }
@@ -239,12 +237,7 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         match self.get(executor, PLAY_PAUSE_FLAG).await {
-            Ok(setting) => {
-                let value = setting.value == "true";
-                println!("db is_playing: {value}");
-                return setting.value == "true";
-            }
-
+            Ok(setting) => return setting.value == "true",
             Err(_) => return false,
         }
     }

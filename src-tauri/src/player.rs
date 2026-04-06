@@ -95,13 +95,15 @@ impl Player {
         Ok(())
     }
 
-    fn load_current_track(&self) -> anyhow::Result<()> {
+    fn load_current_track(&self, start_playing: bool) -> anyhow::Result<()> {
         self.player.clear();
 
         if let Some(index) = self.current_index {
             let song = &self.queue[index];
             self.append_song(song)?;
-            self.player.play();
+            if start_playing {
+                self.player.play();
+            }
         }
 
         Ok(())
@@ -117,16 +119,16 @@ impl Player {
         }
 
         self.current_index = Some(0);
-        self.load_current_track()
+        self.load_current_track(true)
     }
 
-    pub fn play_song_at(&mut self, index: usize) -> anyhow::Result<()> {
+    pub fn play_song_at(&mut self, index: usize, start_playing: bool) -> anyhow::Result<()> {
         if index >= self.queue.len() {
             anyhow::bail!("index out of bounds");
         }
 
         self.current_index = Some(index);
-        self.load_current_track()
+        self.load_current_track(start_playing)
     }
 
     pub fn stop(&self) {
@@ -155,7 +157,7 @@ impl Player {
         }
 
         if self.repeat {
-            return self.load_current_track();
+            return self.load_current_track(true);
         }
 
         let next_index = match self.current_index {
@@ -183,7 +185,7 @@ impl Player {
         };
 
         self.current_index = Some(next_index);
-        self.load_current_track()
+        self.load_current_track(true)
     }
 
     pub fn previous(&mut self) -> anyhow::Result<()> {
@@ -202,12 +204,11 @@ impl Player {
         };
 
         self.current_index = Some(prev_index);
-        self.load_current_track()
+        self.load_current_track(true)
     }
 
     pub fn set_volume(&mut self, volume: rodio::Float) {
         self.volume = volume.clamp(0.0, 1.0);
-        println!("upadted volume to {volume}");
         self.player.set_volume(self.volume);
     }
 
@@ -221,7 +222,6 @@ impl Player {
     }
 
     pub fn set_repeat(&mut self, enabled: bool) {
-        println!("changed repeat value to: {enabled}");
         self.repeat = enabled;
     }
 
@@ -231,7 +231,6 @@ impl Player {
     }
 
     pub fn set_shuffle(&mut self, enabled: bool) {
-        println!("changed shuffle value to: {enabled}");
         self.shuffle = enabled;
     }
 

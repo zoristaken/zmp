@@ -155,6 +155,7 @@
       console.error("Failed to toggle play/pause:", err);
     }
   }
+
   async function previous() {
     try {
       await invoke("previous_song");
@@ -295,7 +296,6 @@
         const count = await invoke<number>("load");
         searchResultCount = count;
 
-        const savedPlaying = await invoke<boolean>("get_play_pause");
         const savedVolume = await invoke<number>("get_volume");
         const savedShuffle = await invoke<boolean>("get_random");
         const savedRepeat = await invoke<boolean>("get_repeat");
@@ -312,10 +312,6 @@
         await refreshCurrentSong();
         await refreshSavedSeek();
         await handleTrackChange(initialIndex);
-
-        if (!savedPlaying) {
-          await invoke("play_pause");
-        }
         await syncPlaybackState();
       } catch (err) {
         console.error("Failed to initialize player:", err);

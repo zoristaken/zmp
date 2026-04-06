@@ -146,7 +146,7 @@ async fn integration_keybind_roundtrips() {
         .await
         .unwrap();
     service
-        .set_last_search_str(&service.pool, "aphex twin")
+        .set_saved_search_blob(&service.pool, "aphex twin")
         .await
         .unwrap();
 
@@ -171,7 +171,7 @@ async fn integration_keybind_roundtrips() {
         "Ctrl+R"
     );
     assert_eq!(
-        service.get_last_search_str(&service.pool).await.unwrap(),
+        service.get_saved_search_blob(&service.pool).await.unwrap(),
         "aphex twin"
     );
 }
