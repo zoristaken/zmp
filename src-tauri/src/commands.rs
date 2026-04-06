@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -76,6 +76,11 @@ pub async fn load(
     let is_random = state.zmp.setting.is_random_play(&state.zmp.pool).await;
     let is_repeat = state.zmp.setting.is_repeat_flag(&state.zmp.pool).await;
     let saved_index = state.zmp.setting.get_saved_index(&state.zmp.pool).await;
+    let current_song_seek = state
+        .zmp
+        .setting
+        .get_current_song_seek(&state.zmp.pool)
+        .await;
 
     let count = songs.len();
 
@@ -96,6 +101,9 @@ pub async fn load(
         if !songs.is_empty() {
             let index = saved_index.min(songs.len() - 1);
             player.play_song_at(index).map_err(|e| e.to_string())?;
+            let duration = Duration::from_secs(current_song_seek as u64);
+            println!("seek duration during load: {:#?}", duration);
+            player.seek(duration).map_err(|e| e.to_string())?;
         }
 
         player.current_index()
@@ -297,20 +305,46 @@ pub async fn get_current_song_seek(state: tauri::State<'_, AppState>) -> Result<
         .get_current_song_seek(&state.zmp.pool)
         .await;
 
+    println!("[GET] - current seek saved at {value} seconds");
+
     Ok(value)
 }
 
 #[tauri::command]
-pub async fn set_current_song_current_seek(
+pub async fn save_current_song_seek(
     state: tauri::State<'_, AppState>,
     seek_value: usize,
 ) -> Result<(), String> {
     state
         .zmp
         .setting
-        .set_current_song_current_seek(&state.zmp.pool, seek_value)
+        .set_current_song_seek(&state.zmp.pool, seek_value)
         .await
         .map_err(|e| e.to_string())?;
+
+    println!("[SET] - current seek saved at {seek_value} seconds");
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_current_song_seek(
+    state: tauri::State<'_, AppState>,
+    seek_value: usize,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_current_song_seek(&state.zmp.pool, seek_value)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+    player
+        .seek_to_seconds(seek_value as u64)
+        .map_err(|e| e.to_string())?;
+
+    println!("[SET] - current seek saved at {seek_value} seconds");
 
     Ok(())
 }
