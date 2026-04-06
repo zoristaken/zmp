@@ -57,17 +57,17 @@ impl SongRepository<Sqlite> for SqliteDb {
             "INSERT OR IGNORE INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(val.title.clone())
-        .bind(val.artist.clone())
-        .bind(val.release_year.clone())
-        .bind(val.album.clone())
-        .bind(val.remix.clone())
-        .bind(val.search_blob.clone())
-        .bind(val.file_path.clone())
-        .bind(val.duration.clone())
+        .bind(&val.title)
+        .bind(&val.artist)
+        .bind(val.release_year)
+        .bind(&val.album)
+        .bind(&val.remix)
+        .bind(&val.search_blob)
+        .bind(&val.file_path)
+        .bind(val.duration)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("failed inserting: {:#?}", val))?;
+        .with_context(|| format!("failed inserting: {:?}", val))?;
         }
 
         Ok(())

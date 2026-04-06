@@ -61,20 +61,20 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        Ok(self.repo.get_all(acquiree).await?)
+        self.repo.get_all(acquiree).await
     }
 
     pub async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        Ok(self.repo.get_by_name(acquiree, name).await?)
+        self.repo.get_by_name(acquiree, name).await
     }
 
     pub async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        Ok(self.repo.get_by_id(acquiree, filter_id).await?)
+        self.repo.get_by_id(acquiree, filter_id).await
     }
 }

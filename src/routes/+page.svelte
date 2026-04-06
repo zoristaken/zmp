@@ -39,6 +39,10 @@
 
   let volumeTimeout: ReturnType<typeof setTimeout> | undefined;
   let playbackInterval: ReturnType<typeof setInterval> | undefined;
+  let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  let hasInitialized = false;
+  let lastSearchedQuery = "";
 
   function formatDuration(durationSeconds: number): string {
     const totalSeconds = Math.max(0, Math.floor(durationSeconds));
@@ -77,9 +81,12 @@
       if (currentSeekSeconds < currentSong.duration) {
         currentSeekSeconds += 1;
         void saveSeekProgress();
-      } else {
-        stopPlaybackTicker();
+        return;
       }
+
+      stopPlaybackTicker();
+      resetSeekUi();
+      void next();
     }, 1000);
   }
 
@@ -124,17 +131,12 @@
   }
 
   async function handleTrackChange(newIndex: number | null) {
-    const oldIndex = selectedIndex;
     selectedIndex = newIndex;
 
-    const trackChanged = oldIndex !== newIndex;
-
-    if (trackChanged) {
-      stopPlaybackTicker();
-      resetSeekUi();
-      await refreshCurrentSong();
-    }
-
+    stopPlaybackTicker();
+    resetSeekUi();
+    await refreshCurrentSong();
+    await refreshSavedSeek();
     await syncPlaybackState();
   }
 
@@ -190,13 +192,19 @@
     }
   }
 
-  async function searchSongs() {
+  async function performSearch(autoplayFirst = false) {
     try {
       const count = await invoke<number>("search_songs", {
         query: searchQuery,
       });
+
       searchResultCount = count;
+      lastSearchedQuery = searchQuery;
       await refreshLoadedSongs();
+
+      if (autoplayFirst && count > 0) {
+        await playSelectedSong(0);
+      }
     } catch (err) {
       console.error("Failed to search songs:", err);
     }
@@ -204,7 +212,14 @@
 
   function handleSearchKeydown(event: KeyboardEvent) {
     if (event.key === "Enter") {
-      void searchSongs();
+      event.preventDefault();
+
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+        searchTimeout = undefined;
+      }
+
+      void performSearch(true);
     }
   }
 
@@ -247,15 +262,19 @@
     }
   }
 
+  let isDraggingSeek = false;
+
   function onSeekInput() {
-    if (isProgrammaticSeekReset) return;
+    if (isProgrammaticSeekReset || !currentSong) return;
     isSeeking = true;
+    isDraggingSeek = true;
     stopPlaybackTicker();
   }
 
-  async function onSeekChange() {
-    if (isProgrammaticSeekReset || !isSeeking || !currentSong) {
+  async function commitSeek() {
+    if (isProgrammaticSeekReset || !currentSong) {
       isSeeking = false;
+      isDraggingSeek = false;
       return;
     }
 
@@ -269,11 +288,30 @@
       resetSeekUi();
     } finally {
       isSeeking = false;
+      isDraggingSeek = false;
 
       if (isPlaying) {
         startPlaybackTicker();
       }
     }
+  }
+
+  async function onSeekChange() {
+    if (!isDraggingSeek) return;
+    await commitSeek();
+  }
+
+  async function onSeekPointerUp() {
+    if (!isDraggingSeek) return;
+    await commitSeek();
+  }
+
+  $: if (hasInitialized && searchQuery !== lastSearchedQuery) {
+    if (searchTimeout) clearTimeout(searchTimeout);
+
+    searchTimeout = setTimeout(() => {
+      void performSearch(false);
+    }, 150);
   }
 
   onMount(() => {
@@ -295,6 +333,7 @@
 
         const count = await invoke<number>("load");
         searchResultCount = count;
+        lastSearchedQuery = searchQuery;
 
         const savedVolume = await invoke<number>("get_volume");
         const savedShuffle = await invoke<boolean>("get_random");
@@ -313,6 +352,8 @@
         await refreshSavedSeek();
         await handleTrackChange(initialIndex);
         await syncPlaybackState();
+
+        hasInitialized = true;
       } catch (err) {
         console.error("Failed to initialize player:", err);
       }
@@ -320,6 +361,7 @@
 
     return () => {
       if (volumeTimeout) clearTimeout(volumeTimeout);
+      if (searchTimeout) clearTimeout(searchTimeout);
       if (playbackInterval) clearInterval(playbackInterval);
       if (unlisten) unlisten();
     };
@@ -336,7 +378,9 @@
           placeholder="Search songs, artist, album..."
           on:keydown={handleSearchKeydown}
         />
-        <button class="search-button" on:click={searchSongs}>Search</button>
+        <button class="search-button" on:click={() => performSearch(true)}>
+          Search
+        </button>
       </div>
     </div>
 
@@ -399,7 +443,7 @@
         step="1"
         bind:value={currentSeekSeconds}
         on:input={onSeekInput}
-        on:change={onSeekChange}
+        on:pointerup={onSeekPointerUp}
         aria-label="Seek"
       />
       <span class="seek-time">

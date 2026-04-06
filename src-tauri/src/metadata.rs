@@ -31,6 +31,7 @@ struct FallbackMetadata {
     artist: String,
 }
 
+#[derive(Default)]
 pub struct MetadataParser {}
 
 impl MetadataParser {
@@ -150,7 +151,7 @@ impl MetadataParser {
                                 release_year: m_release_year,
                                 album: m_album,
                                 remix: m_remix,
-                                search_blob: search_blob,
+                                search_blob,
                                 file_path: metadata.path,
                                 duration: metadata.duration as i64,
                             });

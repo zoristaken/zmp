@@ -142,7 +142,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        if words.len() == 0 {
+        if words.is_empty() {
             return Ok(vec![]);
         }
 

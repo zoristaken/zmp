@@ -192,7 +192,6 @@ pub async fn play_song_at(
 
 #[tauri::command]
 pub async fn search_songs(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     query: String,
 ) -> Result<usize, String> {
@@ -230,30 +229,9 @@ pub async fn search_songs(
             .loaded_songs
             .lock()
             .map_err(|_| "failed to lock loaded songs".to_string())?;
-        *stored = songs.clone();
+        *stored = songs;
     }
 
-    let current_index = {
-        let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-        player.set_queue(songs).map_err(|e| e.to_string())?;
-        player.current_index()
-    };
-
-    state
-        .zmp
-        .setting
-        .set_saved_index(&state.zmp.pool, current_index.unwrap_or(0))
-        .await
-        .map_err(|e| e.to_string())?;
-
-    state
-        .zmp
-        .setting
-        .set_current_song_seek(&state.zmp.pool, 0)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    emit_track_changed(&app, current_index)?;
     Ok(count)
 }
 
@@ -264,7 +242,7 @@ pub async fn next_song(
 ) -> Result<(), String> {
     let current_index = {
         let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-        player.next().map_err(|e| e.to_string())?;
+        player.next_song().map_err(|e| e.to_string())?;
         player.current_index()
     };
 

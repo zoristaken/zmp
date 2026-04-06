@@ -56,7 +56,7 @@ where
         let volume = setting.get_saved_volume_value(&setting.pool).await;
 
         Self {
-            setting: setting,
+            setting,
             song: SongService::new(repos.clone()),
             filter: FilterService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),

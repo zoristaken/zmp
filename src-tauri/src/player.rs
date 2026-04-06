@@ -28,17 +28,17 @@ impl Player {
         volume: rodio::Float,
     ) -> Self {
         let stream_handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
-        let player = rodio::Player::connect_new(&stream_handle.mixer());
+        let player = rodio::Player::connect_new(stream_handle.mixer());
         player.set_volume(volume);
 
         Self {
             _stream_handle: stream_handle,
             player,
             queue: Vec::new(),
-            current_index: current_index,
-            repeat: repeat,
-            shuffle: shuffle,
-            volume: volume,
+            current_index,
+            repeat,
+            shuffle,
+            volume,
         }
     }
 
@@ -47,20 +47,26 @@ impl Player {
             return Ok(());
         };
 
-        let song = &self.queue[index];
+        let target = Duration::from_secs(seconds);
+
         let was_paused = self.player.is_paused();
 
         self.player.clear();
 
-        let mut source = Self::source_from_song(song)?;
-        source
-            .try_seek(Duration::from_secs(seconds))
-            .map_err(|e| anyhow::anyhow!("seek failed: {e}"))?;
+        let source = Self::source_from_song(&self.queue[index])?;
 
         if self.repeat {
             self.player.append(source.repeat_infinite());
         } else {
             self.player.append(source);
+        }
+
+        //since we are rebuilding the source, if we try_seek with 0, it will
+        //return an error on the symphonia decoder side
+        if !target.is_zero() {
+            self.player
+                .try_seek(target)
+                .map_err(|e| anyhow::anyhow!("seek failed: {e}"))?;
         }
 
         self.player.set_volume(self.volume);
@@ -151,7 +157,7 @@ impl Player {
         self.player.pause();
     }
 
-    pub fn next(&mut self) -> anyhow::Result<()> {
+    pub fn next_song(&mut self) -> anyhow::Result<()> {
         if self.queue.is_empty() {
             return Ok(());
         }
@@ -194,7 +200,7 @@ impl Player {
         }
 
         if self.player.get_pos() > Duration::from_secs(3) {
-            return self.seek(Duration::ZERO);
+            return self.seek_to_seconds(0);
         }
 
         let prev_index = match self.current_index {
@@ -212,11 +218,6 @@ impl Player {
         self.player.set_volume(self.volume);
     }
 
-    pub fn seek(&self, abs_pos: Duration) -> anyhow::Result<()> {
-        self.player.try_seek(abs_pos)?;
-        Ok(())
-    }
-
     pub fn is_repeat(&self) -> bool {
         self.repeat
     }
@@ -225,18 +226,8 @@ impl Player {
         self.repeat = enabled;
     }
 
-    pub fn toggle_repeat(&mut self) -> bool {
-        self.repeat = !self.repeat;
-        self.repeat
-    }
-
     pub fn set_shuffle(&mut self, enabled: bool) {
         self.shuffle = enabled;
-    }
-
-    pub fn toggle_shuffle(&mut self) -> bool {
-        self.shuffle = !self.shuffle;
-        self.shuffle
     }
 
     pub fn current_song(&self) -> Option<&Song> {

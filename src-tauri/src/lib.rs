@@ -49,7 +49,7 @@ pub fn run() {
         ])
         .setup(|app| {
             tauri::async_runtime::block_on(async move {
-                let config = config::Config::new(&app).await.unwrap();
+                let config = config::Config::new(app).await.unwrap();
                 let path = config.db_path().await.unwrap();
                 let sqlite = SqliteDb::new(&path).await.unwrap();
                 app.manage(AppState {

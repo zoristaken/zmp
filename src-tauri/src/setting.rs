@@ -92,9 +92,9 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         match self.get(executor, REPEAT_FLAG).await {
-            Ok(setting) => return setting.value == "true",
-            Err(_) => return false,
-        };
+            Ok(setting) => setting.value == "true",
+            Err(_) => false,
+        }
     }
 
     pub async fn get_saved_search_blob<'a, A>(&self, executor: A) -> anyhow::Result<String>
@@ -200,9 +200,9 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         match self.get(executor, PROCESSED_MUSIC_FLAG).await {
-            Ok(setting) => return setting.value == "true",
-            Err(_) => return false,
-        };
+            Ok(setting) => setting.value == "true",
+            Err(_) => false,
+        }
     }
 
     pub async fn set_settings_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
@@ -237,8 +237,8 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         match self.get(executor, PLAY_PAUSE_FLAG).await {
-            Ok(setting) => return setting.value == "true",
-            Err(_) => return false,
+            Ok(setting) => setting.value == "true",
+            Err(_) => false,
         }
     }
 
@@ -322,8 +322,8 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         match self.get(executor, RANDOM_PLAY_FLAG).await {
-            Ok(setting) => return setting.value == "true",
-            Err(_) => return false,
+            Ok(setting) => setting.value == "true",
+            Err(_) => false,
         }
     }
 
