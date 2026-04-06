@@ -25,11 +25,21 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::init,
             commands::load,
+            commands::search_songs,
+            commands::get_current_index,
+            commands::get_current_song,
+            commands::get_saved_search_blob,
+            commands::get_loaded_songs,
+            commands::play_song_at,
             commands::next_song,
             commands::previous_song,
+            commands::get_is_paused,
             commands::play_pause,
+            commands::get_volume,
             commands::set_volume,
+            commands::get_random,
             commands::set_random,
+            commands::get_repeat,
             commands::set_repeat,
         ])
         .setup(|app| {
@@ -39,7 +49,7 @@ pub fn run() {
                 let sqlite = SqliteDb::new(&path).await.unwrap();
                 app.manage(AppState {
                     loaded_songs: Mutex::new(Vec::new()),
-                    zmp: PlayerManager::new(sqlite.clone()),
+                    zmp: PlayerManager::new(sqlite.clone()).await,
                 });
             });
             Ok(())

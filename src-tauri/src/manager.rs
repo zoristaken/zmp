@@ -55,10 +55,6 @@ where
         let repeat = setting.is_repeat_flag(&setting.pool).await;
         let volume = setting.get_saved_volume_value(&setting.pool).await;
 
-        println!(
-            "new player, shuffle: {shuffle}, volume: {volume}, repeat: {repeat}, index: {index}"
-        );
-
         Self {
             setting: setting,
             song: SongService::new(repos.clone()),

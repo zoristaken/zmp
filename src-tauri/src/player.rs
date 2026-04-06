@@ -4,34 +4,41 @@ use anyhow::Context;
 use rand::seq::IndexedRandom;
 use rodio::{Decoder, Source};
 
-use crate::{setting, song::Song};
+use crate::song::Song;
 
 pub struct Player {
     _stream_handle: rodio::MixerDeviceSink,
     player: rodio::Player,
     queue: Vec<Song>,
     current_index: Option<usize>,
-    history: Vec<usize>,
-
-    repeat_one: bool,
+    repeat: bool,
     shuffle: bool,
     volume: rodio::Float,
 }
 
 impl Player {
-    pub fn new() -> Self {
+    pub fn current_index(&self) -> Option<usize> {
+        self.current_index
+    }
+
+    pub fn new(
+        current_index: Option<usize>,
+        shuffle: bool,
+        repeat: bool,
+        volume: rodio::Float,
+    ) -> Self {
         let stream_handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
         let player = rodio::Player::connect_new(&stream_handle.mixer());
+        player.set_volume(volume);
 
         Self {
             _stream_handle: stream_handle,
             player,
             queue: Vec::new(),
-            current_index: None,
-            repeat_one: false,
-            shuffle: false,
-            volume: setting::DEFAULT_VOLUME,
-            history: Vec::new(),
+            current_index: current_index,
+            repeat: repeat,
+            shuffle: shuffle,
+            volume: volume,
         }
     }
 
@@ -46,12 +53,13 @@ impl Player {
 
     fn append_song(&self, song: &Song) -> anyhow::Result<()> {
         let source = Self::source_from_song(song)?;
-        if self.repeat_one {
+
+        if self.repeat {
             self.player.append(source.repeat_infinite());
         } else {
             self.player.append(source);
         }
-        self.player.set_volume(self.volume);
+
         Ok(())
     }
 
@@ -64,12 +72,13 @@ impl Player {
             self.player.play();
         }
 
+        println!("\n\n\nLOADED TRACK INFO:\n\nmax_index: {:#?}\n current_index: {:#?}\nrepeat_mode: {:#?}\nshuffle: {:#?}\nvolume: {:#?}\n QUEUE LENGTH: {:?}", self.queue.len(), self.current_index, self.repeat, self.shuffle, self.volume, self.queue.len());
+
         Ok(())
     }
 
     pub fn set_queue(&mut self, songs: Vec<Song>) -> anyhow::Result<()> {
         self.queue = songs;
-        self.history.clear();
 
         if self.queue.is_empty() {
             self.current_index = None;
@@ -84,10 +93,6 @@ impl Player {
     pub fn play_song_at(&mut self, index: usize) -> anyhow::Result<()> {
         if index >= self.queue.len() {
             anyhow::bail!("index out of bounds");
-        }
-
-        if let Some(current) = self.current_index {
-            self.history.push(current);
         }
 
         self.current_index = Some(index);
@@ -119,11 +124,13 @@ impl Player {
             return Ok(());
         }
 
+        if self.repeat {
+            return self.load_current_track();
+        }
+
         let next_index = match self.current_index {
             None => 0,
             Some(current) => {
-                self.history.push(current);
-
                 if self.shuffle {
                     let candidates: Vec<usize> =
                         (0..self.queue.len()).filter(|&i| i != current).collect();
@@ -132,12 +139,15 @@ impl Player {
                         current
                     } else {
                         let mut rng = rand::rng();
-                        *candidates
-                            .choose(&mut rng)
-                            .expect("candidates is not empty")
+                        *candidates.choose(&mut rng).unwrap()
                     }
                 } else {
-                    (current + 1) % self.queue.len()
+                    let next = current + 1;
+                    if next >= self.queue.len() {
+                        0
+                    } else {
+                        next
+                    }
                 }
             }
         };
@@ -151,19 +161,14 @@ impl Player {
             return Ok(());
         }
 
-        // common UX: if current song has played a bit, restart it
         if self.player.get_pos() > Duration::from_secs(3) {
             return self.seek(Duration::ZERO);
         }
 
-        let prev_index = if let Some(prev) = self.history.pop() {
-            prev
-        } else {
-            match self.current_index {
-                None => 0,
-                Some(0) => self.queue.len() - 1,
-                Some(current) => current - 1,
-            }
+        let prev_index = match self.current_index {
+            None => 0,
+            Some(0) => self.queue.len() - 1,
+            Some(current) => current - 1,
         };
 
         self.current_index = Some(prev_index);
@@ -172,6 +177,7 @@ impl Player {
 
     pub fn set_volume(&mut self, volume: rodio::Float) {
         self.volume = volume.clamp(0.0, 1.0);
+        println!("upadted volume to {volume}");
         self.player.set_volume(self.volume);
     }
 
@@ -180,24 +186,22 @@ impl Player {
         Ok(())
     }
 
-    pub fn set_repeat_one(&mut self, enabled: bool) -> anyhow::Result<()> {
-        self.repeat_one = enabled;
-
-        // reload current song so repeat mode takes effect immediately
-        if self.current_index.is_some() {
-            self.load_current_track()?;
-        }
-
-        Ok(())
+    pub fn is_repeat(&self) -> bool {
+        self.repeat
     }
 
-    pub fn toggle_repeat_one(&mut self) -> anyhow::Result<bool> {
-        let enabled = !self.repeat_one;
-        self.set_repeat_one(enabled)?;
-        Ok(enabled)
+    pub fn set_repeat(&mut self, enabled: bool) {
+        println!("changed repeat value to: {enabled}");
+        self.repeat = enabled;
+    }
+
+    pub fn toggle_repeat(&mut self) -> bool {
+        self.repeat = !self.repeat;
+        self.repeat
     }
 
     pub fn set_shuffle(&mut self, enabled: bool) {
+        println!("changed shuffle value to: {enabled}");
         self.shuffle = enabled;
     }
 
@@ -208,10 +212,6 @@ impl Player {
 
     pub fn current_song(&self) -> Option<&Song> {
         self.current_index.map(|i| &self.queue[i])
-    }
-
-    pub fn current_index(&self) -> Option<usize> {
-        self.current_index
     }
 
     pub fn is_paused(&self) -> bool {
