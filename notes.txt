@@ -81,7 +81,9 @@ borrom row with play/stop/next/previous/loop/random, etc
 
 TODO:
 - read modules
+- add actual logging messages (instead of printing all over)
 - add actual error logic
-- add frontend and tauri commands
-- add actual missing backend -> frontend implementations
+- add filter logic to tauri commands and frontend
+- save current song duration position
+- add song seek slider to frontend and allow backend to consume it to go to that song positon
 

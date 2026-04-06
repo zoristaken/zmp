@@ -72,8 +72,6 @@ impl Player {
             self.player.play();
         }
 
-        println!("\n\n\nLOADED TRACK INFO:\n\nmax_index: {:#?}\n current_index: {:#?}\nrepeat_mode: {:#?}\nshuffle: {:#?}\nvolume: {:#?}\n QUEUE LENGTH: {:?}", self.queue.len(), self.current_index, self.repeat, self.shuffle, self.volume, self.queue.len());
-
         Ok(())
     }
 
