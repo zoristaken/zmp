@@ -2,7 +2,7 @@ use std::{fs::File, io::BufReader, time::Duration};
 
 use anyhow::Context;
 use rand::seq::IndexedRandom;
-use rodio::{Decoder, Source};
+use rodio::Decoder;
 
 use crate::song::Song;
 
@@ -55,11 +55,7 @@ impl Player {
 
         let source = Self::source_from_song(&self.queue[index])?;
 
-        if self.repeat {
-            self.player.append(source.repeat_infinite());
-        } else {
-            self.player.append(source);
-        }
+        self.player.append(source);
 
         //since we are rebuilding the source, if we try_seek with 0, it will
         //return an error on the symphonia decoder side
@@ -91,13 +87,7 @@ impl Player {
 
     fn append_song(&self, song: &Song) -> anyhow::Result<()> {
         let source = Self::source_from_song(song)?;
-
-        if self.repeat {
-            self.player.append(source.repeat_infinite());
-        } else {
-            self.player.append(source);
-        }
-
+        self.player.append(source);
         Ok(())
     }
 
@@ -199,8 +189,8 @@ impl Player {
             return Ok(());
         }
 
-        if self.player.get_pos() > Duration::from_secs(3) {
-            return self.seek_to_seconds(0);
+        if self.repeat {
+            return self.load_current_track(true);
         }
 
         let prev_index = match self.current_index {
@@ -216,10 +206,6 @@ impl Player {
     pub fn set_volume(&mut self, volume: rodio::Float) {
         self.volume = volume.clamp(0.0, 1.0);
         self.player.set_volume(self.volume);
-    }
-
-    pub fn is_repeat(&self) -> bool {
-        self.repeat
     }
 
     pub fn set_repeat(&mut self, enabled: bool) {

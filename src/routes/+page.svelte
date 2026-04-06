@@ -36,6 +36,7 @@
   let currentSeekSeconds = 0;
   let isSeeking = false;
   let isProgrammaticSeekReset = false;
+  let isDraggingSeek = false;
 
   let volumeTimeout: ReturnType<typeof setTimeout> | undefined;
   let playbackInterval: ReturnType<typeof setInterval> | undefined;
@@ -262,8 +263,6 @@
     }
   }
 
-  let isDraggingSeek = false;
-
   function onSeekInput() {
     if (isProgrammaticSeekReset || !currentSong) return;
     isSeeking = true;
@@ -433,73 +432,100 @@
   </div>
 
   <div class="bottom-bar">
-    <div class="seek-row">
-      <span class="seek-time">{formatDuration(currentSeekSeconds)}</span>
-      <input
-        class="seek-slider"
-        type="range"
-        min="0"
-        max={currentSong ? currentSong.duration : 0}
-        step="1"
-        bind:value={currentSeekSeconds}
-        on:input={onSeekInput}
-        on:pointerup={onSeekPointerUp}
-        aria-label="Seek"
-      />
-      <span class="seek-time">
-        {currentSong ? formatDuration(currentSong.duration) : "0:00"}
-      </span>
-    </div>
+    <div class="bottom-layout">
+      <div class="now-playing">
+        {#if currentSong}
+          <div class="now-playing-content">
+            <div class="now-playing-header">
+              <div class="now-playing-title">{currentSong.title}</div>
+            </div>
 
-    <div class="now-playing">
-      {#if currentSong}
-        <div class="now-playing-content">
-          <div class="now-playing-header">
-            <div class="now-playing-title">{currentSong.title}</div>
+            <div class="now-playing-meta">{currentSong.artist}</div>
+            <div class="now-playing-album">{currentSong.album}</div>
+
+            {#if currentSong.remix}
+              <div class="now-playing-remix">{currentSong.remix}</div>
+            {/if}
           </div>
-
-          <div class="now-playing-meta">{currentSong.artist}</div>
-          <div class="now-playing-album">{currentSong.album}</div>
-
-          {#if currentSong.remix}
-            <div class="now-playing-remix">{currentSong.remix}</div>
-          {/if}
-        </div>
-      {:else}
-        <div class="now-playing-content">
-          <div class="now-playing-header">
-            <div class="now-playing-title">Nothing playing</div>
+        {:else}
+          <div class="now-playing-content">
+            <div class="now-playing-header">
+              <div class="now-playing-title">Nothing playing</div>
+            </div>
+            <div class="now-playing-meta">Choose a song from the list</div>
           </div>
-          <div class="now-playing-meta">Choose a song from the list</div>
-        </div>
-      {/if}
-    </div>
+        {/if}
+      </div>
 
-    <div class="bottom-controls-row">
-      <div class="controls">
-        <button on:click={shuffle} class:active={isShuffle} title="Shuffle">
-          🔀
-        </button>
-        <button on:click={previous} title="Previous">⏮</button>
-        <button
-          class="play"
-          on:click={play}
-          title={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? "⏸" : "▶"}
-        </button>
-        <button on:click={next} title="Next">⏭</button>
-        <button on:click={repeat} class:active={isRepeat} title="Repeat">
-          {#if isRepeat}
-            🔂
+      <div class="center-player">
+        <div class="controls">
+          <button
+            on:click={shuffle}
+            class:active={isShuffle}
+            class="control-button"
+            title="Shuffle"
+          >
+            🔀
+          </button>
+          <button on:click={previous} class="control-button" title="Previous">
+            ⏮
+          </button>
+          <button
+            class="control-button play"
+            on:click={play}
+            title={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? "⏸" : "▶"}
+          </button>
+          <button on:click={next} class="control-button" title="Next">⏭</button
+          >
+          <button
+            on:click={repeat}
+            class:active={isRepeat}
+            class="control-button"
+            title="Repeat"
+          >
+            {#if isRepeat}
+              🔂
+            {:else}
+              🔁
+            {/if}
+          </button>
+        </div>
+
+        <div class="seek-row">
+          <span class="seek-time">{formatDuration(currentSeekSeconds)}</span>
+          {#if currentSong}
+            <input
+              class="seek-slider"
+              type="range"
+              min="0"
+              max={currentSong.duration}
+              step="1"
+              bind:value={currentSeekSeconds}
+              on:input={onSeekInput}
+              on:pointerup={onSeekPointerUp}
+              aria-label="Seek"
+            />
           {:else}
-            🔁
+            <input
+              class="seek-slider"
+              type="range"
+              min="0"
+              max="0"
+              value="0"
+              disabled
+              aria-label="Seek"
+            />
           {/if}
-        </button>
+          <span class="seek-time">
+            {currentSong ? formatDuration(currentSong.duration) : "0:00"}
+          </span>
+        </div>
       </div>
 
       <div class="volume">
-        <button on:click={toggleMute} title="Mute">
+        <button class="volume-button" on:click={toggleMute} title="Mute">
           {#if isMuted || volume === 0}
             🔇
           {:else if volume < 50}
@@ -591,16 +617,30 @@
   }
 
   .search-button {
-    border: none;
+    border: 1px solid #323232;
     border-radius: 999px;
-    background: #222;
-    color: white;
+    background: #1b1b1b;
+    color: #f2f2f2;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 0.95rem;
+    font-weight: 600;
     padding: 0.85rem 1.25rem;
     width: auto;
     height: auto;
     white-space: nowrap;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .search-button:hover {
+    background: #242424;
+    border-color: #454545;
+  }
+
+  .search-button:active {
+    transform: scale(0.98);
   }
 
   .song-list {
@@ -709,38 +749,26 @@
 
   .bottom-bar {
     width: 100%;
-    display: grid;
-    grid-template-rows: auto auto auto;
-    gap: 1rem;
-    align-items: stretch;
     background: #181818;
     border-radius: 12px;
-    padding: 1.25rem;
+    padding: 1rem 1.25rem;
     box-sizing: border-box;
   }
 
-  .seek-row {
+  .bottom-layout {
     display: grid;
-    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    grid-template-columns: minmax(220px, 1fr) minmax(320px, 640px) minmax(
+        180px,
+        1fr
+      );
     align-items: center;
-    gap: 0.75rem;
-  }
-
-  .seek-time {
-    color: #b3b3b3;
-    font-size: 0.9rem;
-    text-align: center;
-    white-space: nowrap;
-  }
-
-  .seek-slider {
-    width: 100%;
+    gap: 1rem;
   }
 
   .now-playing {
     min-width: 0;
     display: flex;
-    align-items: stretch;
+    align-items: center;
   }
 
   .now-playing-content {
@@ -780,48 +808,102 @@
     overflow-wrap: anywhere;
   }
 
-  .bottom-controls-row {
-    position: relative;
-    min-height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .center-player {
+    display: grid;
+    grid-template-rows: auto auto;
+    justify-items: center;
+    gap: 0.8rem;
+    min-width: 0;
   }
 
   .controls {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     align-items: center;
     justify-content: center;
     flex-wrap: nowrap;
   }
 
-  .controls button,
-  .volume button {
-    border: none;
-    border-radius: 50%;
-    background: #222;
-    color: white;
+  .control-button,
+  .volume-button {
+    border: 1px solid #2f2f2f;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #242424 0%, #1d1d1d 100%);
+    color: #d4d4d4;
     cursor: pointer;
-    font-size: 1.2rem;
-    width: 48px;
-    height: 48px;
+    font-size: 1.05rem;
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 1px 2px rgba(0, 0, 0, 0.28);
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease,
+      box-shadow 0.18s ease;
   }
 
-  .controls button.play {
-    width: 60px;
-    height: 60px;
-    font-size: 1.5rem;
+  .control-button:hover,
+  .volume-button:hover {
+    background: linear-gradient(180deg, #2a2a2a 0%, #222 100%);
+    border-color: #434343;
+    color: #f0f0f0;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 3px 10px rgba(0, 0, 0, 0.2);
   }
 
-  .controls button.active {
-    background: #1db954;
+  .control-button:active,
+  .volume-button:active {
+    transform: scale(0.97);
+  }
+
+  .control-button.play {
+    width: 54px;
+    height: 54px;
+    font-size: 1.3rem;
+    background: linear-gradient(180deg, #f0f0f0 0%, #d9d9d9 100%);
+    color: #111;
+    border-color: #cfcfcf;
+  }
+
+  .control-button.play:hover {
+    background: linear-gradient(180deg, #fafafa 0%, #e5e5e5 100%);
+    color: #000;
+    border-color: #e6e6e6;
+  }
+
+  .control-button.active {
+    background: linear-gradient(180deg, #2f3a33 0%, #263129 100%);
+    border-color: #45644e;
+    color: #bfe3c9;
+  }
+
+  .seek-row {
+    width: 100%;
+    max-width: 520px;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .seek-time {
+    color: #b3b3b3;
+    font-size: 0.9rem;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .seek-slider {
+    width: 100%;
   }
 
   .volume {
-    position: absolute;
-    right: 0;
+    justify-self: end;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -840,14 +922,26 @@
   }
 
   @media (max-width: 980px) {
-    .bottom-controls-row {
-      min-height: auto;
-      flex-direction: column;
+    .bottom-layout {
+      grid-template-columns: 1fr;
       gap: 1rem;
     }
 
+    .center-player {
+      order: 1;
+    }
+
+    .now-playing {
+      order: 2;
+    }
+
     .volume {
-      position: static;
+      order: 3;
+      justify-self: center;
+    }
+
+    .seek-row {
+      max-width: 100%;
     }
   }
 </style>
