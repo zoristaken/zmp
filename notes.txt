@@ -86,4 +86,5 @@ TODO:
 - add filter logic to tauri commands and frontend
 - save current song duration position
 - add song seek slider to frontend and allow backend to consume it to go to that song positon
+- add first setup window + settings button with similar setup
 
