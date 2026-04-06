@@ -106,20 +106,12 @@ impl Player {
         self.player.stop();
     }
 
-    pub fn play_pause(&self) {
-        if self.player.is_paused() {
+    pub fn play_pause(&self, should_play: bool) {
+        if should_play {
             self.player.play();
         } else {
             self.player.pause();
         }
-    }
-
-    pub fn play(&self) {
-        self.player.play();
-    }
-
-    pub fn pause(&self) {
-        self.player.pause();
     }
 
     pub fn next_song(&mut self) -> anyhow::Result<()> {
@@ -183,12 +175,12 @@ impl Player {
         self.player.set_volume(self.volume);
     }
 
-    pub fn set_repeat(&mut self, enabled: bool) {
-        self.repeat = enabled;
+    pub fn set_repeat(&mut self, flag: bool) {
+        self.repeat = flag;
     }
 
-    pub fn set_shuffle(&mut self, enabled: bool) {
-        self.shuffle = enabled;
+    pub fn set_shuffle(&mut self, flag: bool) {
+        self.shuffle = flag;
     }
 
     pub fn current_song(&self) -> Option<&Song> {

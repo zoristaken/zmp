@@ -146,7 +146,7 @@ pub async fn get_loaded_songs(state: tauri::State<'_, AppState>) -> Result<Vec<S
 }
 
 #[tauri::command]
-pub async fn get_is_paused(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+pub async fn get_is_player_paused(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
     Ok(player.is_paused())
 }
@@ -265,13 +265,6 @@ pub async fn next_song(
 }
 
 #[tauri::command]
-pub async fn play_pause(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-    player.play_pause();
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn previous_song(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
@@ -366,11 +359,7 @@ pub async fn set_play_pause(
         .map_err(|e| e.to_string())?;
 
     let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-    if is_playing {
-        player.play();
-    } else {
-        player.pause();
-    }
+    player.play_pause(is_playing);
 
     Ok(())
 }

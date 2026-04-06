@@ -130,7 +130,7 @@
 
   async function syncPlaybackState() {
     try {
-      const paused = await invoke<boolean>("get_is_paused");
+      const paused = await invoke<boolean>("get_is_player_paused");
       isPlaying = !paused;
 
       if (isPlaying) {
@@ -163,8 +163,8 @@
 
   async function play() {
     try {
-      await invoke("play_pause");
       await syncPlaybackState();
+      isPlaying = !isPlaying;
       await invoke("set_play_pause", { isPlaying });
     } catch (err) {
       console.error("Failed to toggle play/pause:", err);
@@ -351,6 +351,7 @@
         const savedShuffle = await invoke<boolean>("get_random");
         const savedRepeat = await invoke<boolean>("get_repeat");
         const initialIndex = await invoke<number | null>("get_current_index");
+        const savedIsPlaying = await invoke<boolean>("get_play_pause");
 
         volume = Math.round(savedVolume * 100);
         previousVolume = volume > 0 ? volume : 50;
@@ -358,6 +359,7 @@
 
         isShuffle = savedShuffle;
         isRepeat = savedRepeat;
+        isPlaying = savedIsPlaying;
 
         await refreshLoadedSongs();
         await refreshCurrentSong();
