@@ -1,10 +1,11 @@
 use async_trait::async_trait;
+use serde::Serialize;
 use sqlx::{Acquire, Database};
 
 use crate::manager::HasPool;
 
 #[allow(dead_code)]
-#[derive(sqlx::FromRow, Debug, Clone, PartialEq)]
+#[derive(sqlx::FromRow, Debug, Clone, PartialEq, Serialize)]
 pub struct Song {
     pub id: i32,
     pub title: String,

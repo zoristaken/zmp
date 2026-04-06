@@ -11,7 +11,6 @@ use crate::{
     song_filter::{SongFilterRepository, SongFilterService},
     sqlite::SqliteDb,
 };
-
 pub struct AppState {
     pub loaded_songs: Mutex<Vec<Song>>,
     pub zmp: PlayerManager<SqliteDb, Sqlite>,
@@ -49,14 +48,24 @@ where
         + HasPool<DB>
         + Clone,
 {
-    pub fn new(repos: R) -> Self {
+    pub async fn new(repos: R) -> Self {
+        let setting = SettingService::new(repos.clone());
+        let index = setting.get_saved_index(&setting.pool).await;
+        let shuffle = setting.is_random_play(&setting.pool).await;
+        let repeat = setting.is_repeat_flag(&setting.pool).await;
+        let volume = setting.get_saved_volume_value(&setting.pool).await;
+
+        println!(
+            "new player, shuffle: {shuffle}, volume: {volume}, repeat: {repeat}, index: {index}"
+        );
+
         Self {
-            setting: SettingService::new(repos.clone()),
+            setting: setting,
             song: SongService::new(repos.clone()),
             filter: FilterService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
-            player: Mutex::new(Player::new()),
+            player: Mutex::new(Player::new(Some(index), shuffle, repeat, volume)),
             pool: repos.pool().clone(),
         }
     }

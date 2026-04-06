@@ -7,6 +7,7 @@ use crate::manager::HasPool;
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
 const VOLUME_VALUE: &str = "volume_value";
+//TODO: check why I have search_blob and last_search_str
 const SEARCH_BLOB: &str = "search_blob";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
@@ -16,6 +17,7 @@ const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
 const RANDOM_KEYBIND: &str = "random_kb";
+const INDEX_VALUE: &str = "index_value";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
 
 #[allow(dead_code)]
@@ -113,6 +115,23 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.set(executor, SEARCH_BLOB, search_blob).await
+    }
+
+    pub async fn get_saved_index<'a, A>(&self, executor: A) -> usize
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self.get(executor, INDEX_VALUE).await {
+            Ok(setting) => setting.value.parse::<usize>().unwrap_or(0),
+            Err(_) => 0,
+        }
+    }
+
+    pub async fn set_saved_index<'a, A>(&self, executor: A, index: usize) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, INDEX_VALUE, &index.to_string()).await
     }
 
     pub async fn get_saved_volume_value<'a, A>(&self, executor: A) -> rodio::Float
