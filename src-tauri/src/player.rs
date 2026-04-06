@@ -43,35 +43,11 @@ impl Player {
     }
 
     pub fn seek_to_seconds(&mut self, seconds: u64) -> anyhow::Result<()> {
-        let Some(index) = self.current_index else {
-            return Ok(());
-        };
-
         let target = Duration::from_secs(seconds);
 
-        let was_paused = self.player.is_paused();
-
-        self.player.clear();
-
-        let source = Self::source_from_song(&self.queue[index])?;
-
-        self.player.append(source);
-
-        //since we are rebuilding the source, if we try_seek with 0, it will
-        //return an error on the symphonia decoder side
-        if !target.is_zero() {
-            self.player
-                .try_seek(target)
-                .map_err(|e| anyhow::anyhow!("seek failed: {e}"))?;
-        }
-
-        self.player.set_volume(self.volume);
-
-        if was_paused {
-            self.player.pause();
-        } else {
-            self.player.play();
-        }
+        self.player
+            .try_seek(target)
+            .map_err(|e| anyhow::anyhow!("seek failed: {e}"))?;
 
         Ok(())
     }
@@ -79,8 +55,7 @@ impl Player {
     fn source_from_song(song: &Song) -> anyhow::Result<Decoder<BufReader<File>>> {
         let file = File::open(&song.file_path)
             .with_context(|| format!("failed to open file: {}", song.file_path))?;
-        let reader = BufReader::new(file);
-        let source = Decoder::new(reader)
+        let source = Decoder::try_from(file)
             .with_context(|| format!("failed to decode file: {}", song.file_path))?;
         Ok(source)
     }

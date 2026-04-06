@@ -93,7 +93,7 @@
 
       if (currentSeekSeconds < currentSong.duration) {
         currentSeekSeconds += 1;
-        //void saveSeekProgress();
+        void saveSeekProgress();
         return;
       }
 
@@ -293,6 +293,7 @@
       await invoke("set_current_song_seek", {
         seekValue: currentSeekSeconds,
       });
+
       await saveSeekProgress();
     } catch (err) {
       console.error("Failed to seek song:", err);
