@@ -155,8 +155,7 @@ impl MetadataParser {
                                 duration: metadata.duration as i64,
                             });
                         }
-                        Err(err) => {
-                            eprintln!("Failed to read metadata for {}: {err}", path.display());
+                        Err(_) => {
                             continue;
                         }
                     }

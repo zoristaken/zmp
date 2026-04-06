@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -19,8 +17,6 @@ fn emit_track_changed(app: &AppHandle, current_index: Option<usize>) -> Result<(
 //TODO: temporary mock of what a setup would look like
 #[tauri::command]
 pub async fn init(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let now = Instant::now();
-
     //select music folder path
     state
         .zmp
@@ -37,8 +33,6 @@ pub async fn init(state: tauri::State<'_, AppState>) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    let elapsed = now.elapsed();
-    println!("Init elapsed: {:.2?}", elapsed);
     Ok(())
 }
 
@@ -47,8 +41,6 @@ pub async fn load(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<usize, String> {
-    let now = Instant::now();
-
     let saved_search = state
         .zmp
         .setting
@@ -76,7 +68,7 @@ pub async fn load(
     let is_random = state.zmp.setting.is_random_play(&state.zmp.pool).await;
     let is_repeat = state.zmp.setting.is_repeat_flag(&state.zmp.pool).await;
     let saved_index = state.zmp.setting.get_saved_index(&state.zmp.pool).await;
-    let current_song_seek = state
+    let saved_seek = state
         .zmp
         .setting
         .get_current_song_seek(&state.zmp.pool)
@@ -101,18 +93,18 @@ pub async fn load(
         if !songs.is_empty() {
             let index = saved_index.min(songs.len() - 1);
             player.play_song_at(index).map_err(|e| e.to_string())?;
-            let duration = Duration::from_secs(current_song_seek as u64);
-            println!("seek duration during load: {:#?}", duration);
-            player.seek(duration).map_err(|e| e.to_string())?;
+
+            if saved_seek > 0 {
+                player
+                    .seek_to_seconds(saved_seek as u64)
+                    .map_err(|e| e.to_string())?;
+            }
         }
 
         player.current_index()
     };
 
     emit_track_changed(&app, current_index)?;
-
-    let elapsed = now.elapsed();
-    println!("Loading elapsed: {:.2?}", elapsed);
     Ok(count)
 }
 
@@ -181,6 +173,13 @@ pub async fn play_song_at(
         .await
         .map_err(|e| e.to_string())?;
 
+    state
+        .zmp
+        .setting
+        .set_current_song_seek(&state.zmp.pool, 0)
+        .await
+        .map_err(|e| e.to_string())?;
+
     emit_track_changed(&app, current_index)?;
     Ok(())
 }
@@ -241,6 +240,13 @@ pub async fn search_songs(
         .await
         .map_err(|e| e.to_string())?;
 
+    state
+        .zmp
+        .setting
+        .set_current_song_seek(&state.zmp.pool, 0)
+        .await
+        .map_err(|e| e.to_string())?;
+
     emit_track_changed(&app, current_index)?;
     Ok(count)
 }
@@ -263,6 +269,13 @@ pub async fn next_song(
         .await
         .map_err(|e| e.to_string())?;
 
+    state
+        .zmp
+        .setting
+        .set_current_song_seek(&state.zmp.pool, 0)
+        .await
+        .map_err(|e| e.to_string())?;
+
     emit_track_changed(&app, current_index)?;
     Ok(())
 }
@@ -271,7 +284,6 @@ pub async fn next_song(
 pub async fn play_pause(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
     player.play_pause();
-
     Ok(())
 }
 
@@ -293,6 +305,13 @@ pub async fn previous_song(
         .await
         .map_err(|e| e.to_string())?;
 
+    state
+        .zmp
+        .setting
+        .set_current_song_seek(&state.zmp.pool, 0)
+        .await
+        .map_err(|e| e.to_string())?;
+
     emit_track_changed(&app, current_index)?;
     Ok(())
 }
@@ -304,8 +323,6 @@ pub async fn get_current_song_seek(state: tauri::State<'_, AppState>) -> Result<
         .setting
         .get_current_song_seek(&state.zmp.pool)
         .await;
-
-    println!("[GET] - current seek saved at {value} seconds");
 
     Ok(value)
 }
@@ -321,8 +338,6 @@ pub async fn save_current_song_seek(
         .set_current_song_seek(&state.zmp.pool, seek_value)
         .await
         .map_err(|e| e.to_string())?;
-
-    println!("[SET] - current seek saved at {seek_value} seconds");
 
     Ok(())
 }
@@ -344,7 +359,34 @@ pub async fn set_current_song_seek(
         .seek_to_seconds(seek_value as u64)
         .map_err(|e| e.to_string())?;
 
-    println!("[SET] - current seek saved at {seek_value} seconds");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_play_pause(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let is_playing = state.zmp.setting.is_playing(&state.zmp.pool).await;
+
+    Ok(is_playing)
+}
+
+#[tauri::command]
+pub async fn set_play_pause(
+    state: tauri::State<'_, AppState>,
+    is_playing: bool,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_play_pause_flag(&state.zmp.pool, is_playing)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+    if is_playing {
+        player.play();
+    } else {
+        player.pause();
+    }
 
     Ok(())
 }
@@ -381,7 +423,6 @@ pub async fn set_volume(
 #[tauri::command]
 pub async fn get_repeat(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let value = state.zmp.setting.is_repeat_flag(&state.zmp.pool).await;
-
     Ok(value)
 }
 
@@ -405,7 +446,6 @@ pub async fn set_repeat(state: tauri::State<'_, AppState>) -> Result<(), String>
 #[tauri::command]
 pub async fn get_random(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let value = state.zmp.setting.is_random_play(&state.zmp.pool).await;
-
     Ok(value)
 }
 

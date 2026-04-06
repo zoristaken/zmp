@@ -7,11 +7,10 @@ use crate::manager::HasPool;
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
 const VOLUME_VALUE: &str = "volume_value";
-//TODO: check why I have search_blob and last_search_str
 const SEARCH_BLOB: &str = "search_blob";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
-const LAST_SEARCH_STR: &str = "last_search_str";
+const PLAY_PAUSE_FLAG: &str = "play_pause_flag";
 const SETTINGS_KEYBIND: &str = "settings_kb";
 const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
@@ -145,7 +144,7 @@ where
         }
     }
 
-    pub async fn set_current_song_current_seek<'a, A>(
+    pub async fn set_current_song_seek<'a, A>(
         &self,
         executor: A,
         value: usize,
@@ -222,20 +221,32 @@ where
         Ok(setting.value)
     }
 
-    pub async fn set_last_search_str<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_play_pause_flag<'a, A>(&self, executor: A, playing: bool) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, LAST_SEARCH_STR, key).await
+        if playing {
+            println!("db set_play_pause_flag: true");
+            self.set(executor, PLAY_PAUSE_FLAG, "true").await
+        } else {
+            println!("db set_play_pause_flag: false");
+            self.set(executor, PLAY_PAUSE_FLAG, "false").await
+        }
     }
 
-    pub async fn get_last_search_str<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn is_playing<'a, A>(&self, executor: A) -> bool
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, LAST_SEARCH_STR).await?;
+        match self.get(executor, PLAY_PAUSE_FLAG).await {
+            Ok(setting) => {
+                let value = setting.value == "true";
+                println!("db is_playing: {value}");
+                return setting.value == "true";
+            }
 
-        Ok(setting.value)
+            Err(_) => return false,
+        }
     }
 
     pub async fn set_random_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>

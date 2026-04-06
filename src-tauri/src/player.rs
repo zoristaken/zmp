@@ -42,6 +42,38 @@ impl Player {
         }
     }
 
+    pub fn seek_to_seconds(&mut self, seconds: u64) -> anyhow::Result<()> {
+        let Some(index) = self.current_index else {
+            return Ok(());
+        };
+
+        let song = &self.queue[index];
+        let was_paused = self.player.is_paused();
+
+        self.player.clear();
+
+        let mut source = Self::source_from_song(song)?;
+        source
+            .try_seek(Duration::from_secs(seconds))
+            .map_err(|e| anyhow::anyhow!("seek failed: {e}"))?;
+
+        if self.repeat {
+            self.player.append(source.repeat_infinite());
+        } else {
+            self.player.append(source);
+        }
+
+        self.player.set_volume(self.volume);
+
+        if was_paused {
+            self.player.pause();
+        } else {
+            self.player.play();
+        }
+
+        Ok(())
+    }
+
     fn source_from_song(song: &Song) -> anyhow::Result<Decoder<BufReader<File>>> {
         let file = File::open(&song.file_path)
             .with_context(|| format!("failed to open file: {}", song.file_path))?;

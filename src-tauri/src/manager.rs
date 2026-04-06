@@ -67,7 +67,6 @@ where
     }
 
     pub async fn process_music_folder(&self) -> anyhow::Result<()> {
-        println!("trying to process music folder");
         if !self.setting.has_processed_music_folder(&self.pool).await {
             let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
             let songs = self
@@ -80,8 +79,6 @@ where
                 .await?;
             self.song.add_songs(&mut tx, songs).await?;
             tx.commit().await?
-        } else {
-            println!("already processed music folder")
         }
         Ok(())
     }
