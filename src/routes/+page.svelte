@@ -44,6 +44,7 @@
   let searchResultCount = 0;
   let songs: Song[] = [];
   let selectedIndex: number | null = null;
+  let selectedSongId: number | null = null;
   let currentSong: Song | null = null;
 
   let currentSeekSeconds = 0;
@@ -149,11 +150,26 @@
 
     stopPlaybackTicker();
     resetSeekUi();
+
     await refreshCurrentSong();
+    await refreshLoadedSongs();
     await refreshSavedSeek();
     await syncPlaybackState();
-  }
 
+    if (currentSong) {
+      selectedSongId = currentSong.id;
+
+      const visibleSelectedIndex = songs.findIndex(
+        (song) => song.id === currentSong?.id,
+      );
+      selectedIndex = visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
+    } else if (newIndex !== null && songs[newIndex]) {
+      selectedSongId = songs[newIndex].id;
+    } else {
+      selectedSongId = null;
+      selectedIndex = null;
+    }
+  }
   async function playSelectedSong(index: number) {
     try {
       await invoke("play_song_at", { index });
@@ -223,6 +239,15 @@
       searchResultCount = count;
       lastSearchedQuery = searchQuery;
       await refreshLoadedSongs();
+
+      if (selectedSongId !== null) {
+        const visibleSelectedIndex = songs.findIndex(
+          (song) => song.id === selectedSongId,
+        );
+        selectedIndex = visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
+      } else {
+        selectedIndex = null;
+      }
 
       if (autoplayFirst && count > 0) {
         await playSelectedSong(0);
@@ -423,9 +448,9 @@
           </div>
         </div>
 
-        {#each songs as song, i}
+        {#each songs as song, i (song.id)}
           <div
-            class:selected={selectedIndex === i}
+            class:selected={selectedSongId === song.id}
             class="song-row"
             role="button"
             tabindex="0"
