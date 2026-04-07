@@ -416,7 +416,7 @@
           <div>Artist</div>
           <div>Album</div>
           <div>Date</div>
-          <div>Ext</div>
+          <div></div>
           <div class="header-duration">
             {searchResultCount}
             {searchResultCount === 1 ? " song" : " songs"}
@@ -715,10 +715,10 @@
     display: grid;
     grid-template-columns:
       56px
-      minmax(260px, 2.4fr)
-      minmax(260px, 1.7fr)
-      minmax(260px, 2fr)
-      100px
+      minmax(220px, 2.4fr)
+      minmax(220px, 1.7fr)
+      minmax(220px, 2fr)
+      200px
       100px
       70px;
     gap: 1rem;
