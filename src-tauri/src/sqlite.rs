@@ -54,8 +54,8 @@ impl SongRepository<Sqlite> for SqliteDb {
 
         for val in songs {
             sqlx::query(
-            "INSERT OR IGNORE INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&val.title)
         .bind(&val.artist)
@@ -65,6 +65,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         .bind(&val.search_blob)
         .bind(&val.file_path)
         .bind(val.duration)
+        .bind(&val.extension)
         .execute(&mut *conn)
         .await
         .with_context(|| format!("failed inserting: {:?}", val))?;
@@ -80,7 +81,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let songs = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song"
             )
             .fetch_all(conn)
             .await?;
@@ -113,7 +114,7 @@ impl SongRepository<Sqlite> for SqliteDb {
     {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, 
-            search_blob, file_path, duration FROM song WHERE ",
+            search_blob, file_path, duration, extension FROM song WHERE ",
         );
 
         qb.push("(");
@@ -177,7 +178,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-            "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE ",
+            "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE ",
         );
         //TODO: after using the app, verify if searching by substrings actually happens
         //I have a feeling we can improve the performance by moving to a prefix search
@@ -208,7 +209,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let song = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE id = ?"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE id = ?"
             )
             .bind(id)
             .fetch_one(conn)
@@ -228,7 +229,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let song = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration FROM song WHERE title = ? AND artist = ?"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE title = ? AND artist = ?"
             )
             .bind(title)
             .bind(artist)

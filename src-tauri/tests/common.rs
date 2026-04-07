@@ -46,6 +46,7 @@ pub fn song(
     search_blob: &str,
     file_path: &str,
     duration: i64,
+    extension: &str,
 ) -> Song {
     Song {
         id,
@@ -57,6 +58,7 @@ pub fn song(
         search_blob: search_blob.to_string(),
         file_path: file_path.to_string(),
         duration,
+        extension: extension.to_string(),
     }
 }
 
@@ -72,6 +74,7 @@ pub fn sample_songs() -> Vec<Song> {
             "teardrop massive attack mezzanine trip hop",
             "/music/teardrop.mp3",
             330,
+            "mp3",
         ),
         song(
             2,
@@ -81,8 +84,9 @@ pub fn sample_songs() -> Vec<Song> {
             "Windowlicker",
             "",
             "windowlicker aphex twin idm electronic",
-            "/music/windowlicker.mp3",
+            "/music/windowlicker.mp4",
             360,
+            "mp4",
         ),
         song(
             3,
@@ -92,8 +96,9 @@ pub fn sample_songs() -> Vec<Song> {
             "Music Has the Right to Children",
             "",
             "roygbiv boards of canada ambient electronic",
-            "/music/roygbiv.mp3",
+            "/music/roygbiv.flac",
             170,
+            "flac",
         ),
     ]
 }

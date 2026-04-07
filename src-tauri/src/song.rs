@@ -16,6 +16,7 @@ pub struct Song {
     pub search_blob: String,
     pub file_path: String,
     pub duration: i64,
+    pub extension: String,
 }
 
 #[async_trait]

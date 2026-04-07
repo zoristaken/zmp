@@ -25,6 +25,7 @@
     search_blob: string;
     file_path: string;
     duration: number;
+    extension: string;
   };
 
   type TrackChangedPayload = {
@@ -415,6 +416,7 @@
           <div>Artist</div>
           <div>Album</div>
           <div>Date</div>
+          <div>Ext</div>
           <div class="header-duration">
             {searchResultCount}
             {searchResultCount === 1 ? " song" : " songs"}
@@ -448,6 +450,7 @@
             <div class="artist-cell">{song.artist}</div>
             <div class="album-cell">{song.album}</div>
             <div class="date-cell">{formatDate(song.release_year)}</div>
+            <div class="extension-cell">{song.extension}</div>
             <div class="duration-cell">{formatDuration(song.duration)}</div>
           </div>
         {/each}
@@ -712,11 +715,12 @@
     display: grid;
     grid-template-columns:
       56px
-      minmax(220px, 2.4fr)
-      minmax(180px, 1.7fr)
-      minmax(220px, 2fr)
-      90px
-      120px;
+      minmax(260px, 2.4fr)
+      minmax(260px, 1.7fr)
+      minmax(260px, 2fr)
+      100px
+      100px
+      70px;
     gap: 1rem;
     align-items: center;
     padding: 0.9rem 1rem;
@@ -761,6 +765,7 @@
 
   .index,
   .duration-cell,
+  .extension-cell,
   .date-cell {
     color: #b3b3b3;
     font-size: 0.95rem;

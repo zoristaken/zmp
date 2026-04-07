@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS song (
     remix        TEXT,
     search_blob  TEXT,
     file_path    TEXT,
+    extension    TEXT,
     duration     INTEGER,
     UNIQUE(title, artist, remix)
 );

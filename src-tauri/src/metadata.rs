@@ -154,6 +154,7 @@ impl MetadataParser {
                                 search_blob,
                                 file_path: metadata.path,
                                 duration: metadata.duration as i64,
+                                extension: ext,
                             });
                         }
                         Err(_) => {

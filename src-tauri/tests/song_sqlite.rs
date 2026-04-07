@@ -16,6 +16,7 @@ async fn integration_add_songs_and_list_songs() {
     let songs = service.list_songs(&service.pool).await.unwrap();
     assert_eq!(songs.len(), 3);
     assert_eq!(songs[0].title, "Teardrop");
+    assert_eq!(songs[0].extension, "mp3");
     assert_eq!(songs[1].title, "Windowlicker");
     assert_eq!(songs[2].title, "Roygbiv");
 }
@@ -34,6 +35,7 @@ async fn integration_get_by_id_returns_matching_song() {
     let song = service.get_by_id(&service.pool, 2).await.unwrap();
     assert_eq!(song.title, "Windowlicker");
     assert_eq!(song.artist, "Aphex Twin");
+    assert_eq!(song.extension, "mp4")
 }
 
 //TODO: PROPER IMPLEMENTATION WITH CUSTOM ERRORS
@@ -102,6 +104,7 @@ async fn integration_search_by_filters_in_memory_input() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].title, "Roygbiv");
+    assert_eq!(results[0].extension, "flac")
 }
 
 #[tokio::test]
