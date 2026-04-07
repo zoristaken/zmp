@@ -163,9 +163,17 @@
 
   async function play() {
     try {
-      await syncPlaybackState();
-      isPlaying = !isPlaying;
-      await invoke("set_play_pause", { isPlaying });
+      const nextIsPlaying = !isPlaying;
+
+      await invoke("set_play_pause", { isPlaying: nextIsPlaying });
+      isPlaying = nextIsPlaying;
+
+      if (isPlaying) {
+        startPlaybackTicker();
+      } else {
+        stopPlaybackTicker();
+        await saveSeekProgress();
+      }
     } catch (err) {
       console.error("Failed to toggle play/pause:", err);
     }
