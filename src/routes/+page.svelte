@@ -187,6 +187,7 @@
 
     await ensureSelectedSongIsVisible();
   }
+
   async function playSelectedSong(index: number) {
     try {
       await invoke("play_song_at", { index });
@@ -460,7 +461,7 @@
           <div>Artist</div>
           <div>Album</div>
           <div>Date</div>
-          <div></div>
+          <div>Ext</div>
           <div class="header-duration">
             {searchResultCount}
             {searchResultCount === 1 ? " song" : " songs"}
@@ -759,17 +760,18 @@
   .song-row {
     display: grid;
     grid-template-columns:
-      56px
-      minmax(220px, 2.4fr)
-      minmax(220px, 1.7fr)
-      minmax(220px, 2fr)
-      200px
-      100px
-      70px;
-    gap: 1rem;
+      clamp(2.5rem, 4vw, 3.5rem)
+      minmax(0, 2.4fr)
+      minmax(0, 1.8fr)
+      minmax(0, 1.8fr)
+      clamp(4rem, 8vw, 6rem)
+      clamp(3.5rem, 6vw, 5rem)
+      clamp(3.5rem, 7vw, 4.5rem);
+    gap: clamp(0.4rem, 1vw, 1rem);
     align-items: center;
     padding: 0.9rem 1rem;
     box-sizing: border-box;
+    width: 100%;
   }
 
   .song-list-header {
@@ -782,13 +784,17 @@
     z-index: 2;
   }
 
+  .song-list-header > div,
+  .song-row > div {
+    min-width: 0;
+  }
+
   .header-duration {
     text-align: right;
     white-space: nowrap;
   }
 
   .song-row {
-    width: 100%;
     border-bottom: 1px solid #202020;
     background: transparent;
     color: white;
@@ -865,8 +871,6 @@
     justify-content: space-between;
   }
 
-  /* LEFT: NOW PLAYING */
-
   .now-playing {
     min-width: 0;
     width: min(340px, 28vw);
@@ -918,8 +922,6 @@
     text-overflow: ellipsis;
   }
 
-  /* CENTER: PERFECTLY WINDOW-CENTERED PLAYER */
-
   .center-player {
     position: absolute;
     left: 50%;
@@ -932,11 +934,11 @@
     justify-items: center;
     gap: 0.8rem;
     z-index: 2;
-    pointer-events: none; /* lets layout ignore this block visually */
+    pointer-events: none;
   }
 
   .center-player > * {
-    pointer-events: auto; /* restore interaction for buttons/sliders */
+    pointer-events: auto;
   }
 
   .controls {
@@ -998,8 +1000,6 @@
     transform: scale(0.96);
   }
 
-  /* SEEK BAR */
-
   .seek-row {
     width: 100%;
     max-width: 560px;
@@ -1020,8 +1020,6 @@
     width: 100%;
   }
 
-  /* RIGHT: SPOTIFY-LIKE VOLUME AREA */
-
   .volume {
     width: min(260px, 22vw);
     min-width: 180px;
@@ -1029,8 +1027,8 @@
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;
-    align-self: end; /* visually lines up better with seek row */
-    padding-bottom: 2px; /* tiny nudge to match seek row feel */
+    align-self: end;
+    padding-bottom: 2px;
     z-index: 1;
   }
 
@@ -1054,7 +1052,6 @@
     flex: 0 0 auto;
   }
 
-  /* Prevent left/right from colliding with centered player */
   .now-playing {
     margin-right: max(1rem, 22vw);
   }
@@ -1062,8 +1059,6 @@
   .volume {
     margin-left: max(1rem, 22vw);
   }
-
-  /* MEDIUM SCREENS */
 
   @media (max-width: 1180px) {
     .center-player {
@@ -1081,7 +1076,19 @@
     }
   }
 
-  /* SMALLER SCREENS: STACK */
+  @media (max-width: 1100px) {
+    .song-list-header,
+    .song-row {
+      grid-template-columns:
+        clamp(2.25rem, 4vw, 3rem)
+        minmax(0, 2.6fr)
+        minmax(0, 1.8fr)
+        minmax(0, 1.5fr)
+        clamp(3.75rem, 7vw, 5rem)
+        clamp(3rem, 5vw, 4rem)
+        clamp(3.25rem, 6vw, 4rem);
+    }
+  }
 
   @media (max-width: 980px) {
     .bottom-bar {
@@ -1126,6 +1133,42 @@
 
     .seek-row {
       max-width: 100%;
+    }
+  }
+
+  @media (max-width: 820px) {
+    .song-list-header,
+    .song-row {
+      grid-template-columns:
+        2.25rem
+        minmax(0, 2.8fr)
+        minmax(0, 1.8fr)
+        minmax(0, 1.2fr)
+        4.25rem
+        3.5rem;
+    }
+
+    .song-list-header > :nth-child(6),
+    .song-row > :nth-child(6) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .song-list-header,
+    .song-row {
+      grid-template-columns:
+        2rem
+        minmax(0, 2.8fr)
+        minmax(0, 1.6fr)
+        3.75rem
+        3.5rem;
+      padding: 0.8rem 0.75rem;
+    }
+
+    .song-list-header > :nth-child(4),
+    .song-row > :nth-child(4) {
+      display: none;
     }
   }
 </style>
