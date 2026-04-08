@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     Play,
     Pause,
@@ -55,6 +55,7 @@
   let volumeTimeout: ReturnType<typeof setTimeout> | undefined;
   let playbackInterval: ReturnType<typeof setInterval> | undefined;
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+  let songRowElements: Array<HTMLDivElement | null> = [];
 
   let hasInitialized = false;
   let lastSearchedQuery = "";
@@ -75,6 +76,20 @@
       clearInterval(playbackInterval);
       playbackInterval = undefined;
     }
+  }
+
+  async function ensureSelectedSongIsVisible() {
+    await tick();
+
+    const index = songs.findIndex((song) => song.id === selectedSongId);
+    if (index < 0) return;
+
+    const row = songRowElements[index];
+    row?.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: "smooth",
+    });
   }
 
   async function saveSeekProgress() {
@@ -169,6 +184,8 @@
       selectedSongId = null;
       selectedIndex = null;
     }
+
+    await ensureSelectedSongIsVisible();
   }
   async function playSelectedSong(index: number) {
     try {
@@ -248,6 +265,8 @@
       } else {
         selectedIndex = null;
       }
+
+      await ensureSelectedSongIsVisible();
 
       if (autoplayFirst && count > 0) {
         await playSelectedSong(0);
@@ -450,6 +469,7 @@
 
         {#each songs as song, i (song.id)}
           <div
+            bind:this={songRowElements[i]}
             class:selected={selectedSongId === song.id}
             class="song-row"
             role="button"
@@ -829,71 +849,94 @@
 
   .bottom-bar {
     width: 100%;
+    min-height: 130px;
     background: #181818;
     border-radius: 12px;
     padding: 1rem 1.25rem;
     box-sizing: border-box;
+    overflow: hidden;
   }
 
   .bottom-layout {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(320px, 640px) minmax(
-        180px,
-        1fr
-      );
+    position: relative;
+    min-height: 98px;
+    display: flex;
     align-items: center;
-    gap: 1rem;
+    justify-content: space-between;
   }
+
+  /* LEFT: NOW PLAYING */
 
   .now-playing {
     min-width: 0;
+    width: min(340px, 28vw);
     display: flex;
     align-items: center;
+    overflow: hidden;
+    z-index: 1;
   }
 
   .now-playing-content {
-    min-width: 0;
     width: 100%;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 0.35rem;
+    overflow: hidden;
   }
 
   .now-playing-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.75rem;
     min-width: 0;
+    overflow: hidden;
   }
 
   .now-playing-title {
     font-weight: 700;
-    font-size: 1.05rem;
+    font-size: clamp(0.98rem, 1vw, 1.05rem);
     line-height: 1.3;
-    white-space: normal;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    flex: 1;
   }
 
   .now-playing-meta,
   .now-playing-album,
   .now-playing-remix {
     color: #b3b3b3;
-    font-size: 0.95rem;
-    line-height: 1.35;
-    white-space: normal;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    font-size: clamp(0.88rem, 0.9vw, 0.95rem);
+    line-height: 1.3;
   }
 
+  .now-playing-title,
+  .now-playing-meta,
+  .now-playing-album,
+  .now-playing-remix {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* CENTER: PERFECTLY WINDOW-CENTERED PLAYER */
+
   .center-player {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(42vw, 720px);
+    min-width: 420px;
     display: grid;
     grid-template-rows: auto auto;
     justify-items: center;
     gap: 0.8rem;
-    min-width: 0;
+    z-index: 2;
+    pointer-events: none; /* lets layout ignore this block visually */
+  }
+
+  .center-player > * {
+    pointer-events: auto; /* restore interaction for buttons/sliders */
   }
 
   .controls {
@@ -955,9 +998,11 @@
     transform: scale(0.96);
   }
 
+  /* SEEK BAR */
+
   .seek-row {
     width: 100%;
-    max-width: 520px;
+    max-width: 560px;
     display: grid;
     grid-template-columns: 52px minmax(0, 1fr) 52px;
     align-items: center;
@@ -975,21 +1020,30 @@
     width: 100%;
   }
 
+  /* RIGHT: SPOTIFY-LIKE VOLUME AREA */
+
   .volume {
-    justify-self: end;
+    width: min(260px, 22vw);
+    min-width: 180px;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.5rem;
+    align-self: end; /* visually lines up better with seek row */
+    padding-bottom: 2px; /* tiny nudge to match seek row feel */
+    z-index: 1;
   }
 
   .volume-button {
     width: 36px;
     height: 36px;
+    flex: 0 0 auto;
   }
 
   .volume input {
-    width: 110px;
-    max-width: 100%;
+    width: clamp(90px, 10vw, 120px);
+    min-width: 90px;
+    max-width: 120px;
   }
 
   .volume span {
@@ -997,25 +1051,77 @@
     font-size: 0.9rem;
     min-width: 42px;
     text-align: right;
+    flex: 0 0 auto;
   }
 
+  /* Prevent left/right from colliding with centered player */
+  .now-playing {
+    margin-right: max(1rem, 22vw);
+  }
+
+  .volume {
+    margin-left: max(1rem, 22vw);
+  }
+
+  /* MEDIUM SCREENS */
+
+  @media (max-width: 1180px) {
+    .center-player {
+      width: min(46vw, 660px);
+      min-width: 380px;
+    }
+
+    .now-playing {
+      width: min(300px, 26vw);
+    }
+
+    .volume {
+      width: min(220px, 20vw);
+      min-width: 170px;
+    }
+  }
+
+  /* SMALLER SCREENS: STACK */
+
   @media (max-width: 980px) {
+    .bottom-bar {
+      min-height: unset;
+      height: auto;
+    }
+
     .bottom-layout {
+      position: static;
+      display: grid;
       grid-template-columns: 1fr;
       gap: 1rem;
     }
 
     .center-player {
+      position: static;
+      left: auto;
+      top: auto;
+      transform: none;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
       order: 1;
+      pointer-events: auto;
     }
 
     .now-playing {
+      width: 100%;
+      margin-right: 0;
       order: 2;
     }
 
     .volume {
+      width: 100%;
+      min-width: 0;
+      margin-left: 0;
+      justify-content: center;
+      align-self: center;
+      padding-bottom: 0;
       order: 3;
-      justify-self: center;
     }
 
     .seek-row {
