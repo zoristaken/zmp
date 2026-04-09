@@ -13,6 +13,9 @@
     Volume1,
     VolumeX,
     Search,
+    Settings2,
+    X,
+    Keyboard,
   } from "lucide-svelte";
 
   type Song = {
@@ -30,6 +33,42 @@
 
   type TrackChangedPayload = {
     currentIndex: number | null;
+  };
+
+  type KeybindAction =
+    | "playPause"
+    | "previous"
+    | "next"
+    | "repeat"
+    | "shuffle"
+    | "mute"
+    | "toggleSearch"
+    | "toggleSettings";
+
+  type KeybindMap = Record<KeybindAction, string>;
+
+  const KEYBINDS_STORAGE_KEY = "player-keybinds";
+
+  const defaultKeybinds: KeybindMap = {
+    playPause: "Space",
+    previous: "A",
+    next: "D",
+    repeat: "R",
+    shuffle: "S",
+    mute: "M",
+    toggleSearch: "Ctrl+E",
+    toggleSettings: "Z",
+  };
+
+  const keybindLabels: Record<KeybindAction, string> = {
+    playPause: "Play / Pause",
+    previous: "Previous",
+    next: "Next",
+    repeat: "Repeat",
+    shuffle: "Shuffle",
+    mute: "Mute / Unmute",
+    toggleSearch: "Focus / Unfocus search",
+    toggleSettings: "Open / Close settings",
   };
 
   let isPlaying = false;
@@ -59,6 +98,11 @@
 
   let hasInitialized = false;
   let lastSearchedQuery = "";
+
+  let searchInput: HTMLInputElement | null = null;
+  let isSettingsOpen = false;
+  let captureAction: KeybindAction | null = null;
+  let keybinds: KeybindMap = { ...defaultKeybinds };
 
   function formatDuration(durationSeconds: number): string {
     const totalSeconds = Math.max(0, Math.floor(durationSeconds));
@@ -277,7 +321,7 @@
     }
   }
 
-  function handleSearchKeydown(event: KeyboardEvent) {
+  async function handleSearchKeydown(event: KeyboardEvent) {
     if (event.key === "Enter") {
       event.preventDefault();
 
@@ -286,7 +330,8 @@
         searchTimeout = undefined;
       }
 
-      void performSearch(true);
+      await performSearch(true);
+      searchInput?.blur();
     }
   }
 
@@ -372,6 +417,238 @@
     await commitSeek();
   }
 
+  function isEditableTarget(target: EventTarget | null): boolean {
+    const element = target as HTMLElement | null;
+    if (!element) return false;
+
+    const tag = element.tagName?.toLowerCase();
+    return (
+      element.isContentEditable ||
+      tag === "input" ||
+      tag === "textarea" ||
+      tag === "select"
+    );
+  }
+
+  function normalizeKeyName(key: string): string {
+    const lower = key.toLowerCase();
+
+    if (lower === " ") return "Space";
+    if (lower === "esc") return "Escape";
+    if (lower === "control") return "Ctrl";
+    if (lower === "meta") return "Meta";
+    if (lower === "alt") return "Alt";
+    if (lower === "shift") return "Shift";
+    if (lower.length === 1) return lower.toUpperCase();
+
+    if (lower.startsWith("arrow")) {
+      return `Arrow${lower.slice(5, 6).toUpperCase()}${lower.slice(6)}`;
+    }
+
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  }
+
+  function isModifierOnlyKey(key: string): boolean {
+    return ["Control", "Shift", "Alt", "Meta"].includes(key);
+  }
+
+  function keyEventToCombo(event: KeyboardEvent): string {
+    const parts: string[] = [];
+
+    if (event.ctrlKey) parts.push("Ctrl");
+    if (event.altKey) parts.push("Alt");
+    if (event.shiftKey) parts.push("Shift");
+    if (event.metaKey) parts.push("Meta");
+
+    const normalizedKey = normalizeKeyName(event.key);
+
+    if (!["Ctrl", "Alt", "Shift", "Meta"].includes(normalizedKey)) {
+      parts.push(normalizedKey);
+    }
+
+    return parts.join("+");
+  }
+
+  //TODO: refactor to use backend's database keybind setting storage
+  function saveKeybinds() {
+    localStorage.setItem(KEYBINDS_STORAGE_KEY, JSON.stringify(keybinds));
+  }
+
+  function loadKeybinds() {
+    try {
+      const raw = localStorage.getItem(KEYBINDS_STORAGE_KEY);
+      if (!raw) {
+        keybinds = { ...defaultKeybinds };
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<KeybindMap>;
+      keybinds = {
+        ...defaultKeybinds,
+        ...parsed,
+      };
+    } catch (err) {
+      console.error("Failed to load keybinds:", err);
+      keybinds = { ...defaultKeybinds };
+    }
+  }
+
+  function openSettings() {
+    isSettingsOpen = true;
+    captureAction = null;
+  }
+
+  function closeSettings() {
+    isSettingsOpen = false;
+    captureAction = null;
+  }
+
+  function toggleSettings() {
+    if (isSettingsOpen) {
+      closeSettings();
+    } else {
+      openSettings();
+    }
+  }
+
+  function startKeyCapture(action: KeybindAction) {
+    captureAction = action;
+  }
+
+  function clearKeybind(action: KeybindAction) {
+    keybinds = {
+      ...keybinds,
+      [action]: "",
+    };
+    saveKeybinds();
+    captureAction = null;
+  }
+
+  function resetKeybinds() {
+    keybinds = { ...defaultKeybinds };
+    saveKeybinds();
+    captureAction = null;
+  }
+
+  function toggleSearchFocus() {
+    if (!searchInput) return;
+
+    const isSearchFocused = document.activeElement === searchInput;
+
+    if (isSearchFocused) {
+      searchInput?.blur();
+      return;
+    }
+
+    searchInput?.focus();
+    searchInput?.select();
+  }
+
+  function setKeybind(action: KeybindAction, combo: string) {
+    const updated = { ...keybinds };
+
+    for (const existingAction of Object.keys(updated) as KeybindAction[]) {
+      if (existingAction !== action && updated[existingAction] === combo) {
+        updated[existingAction] = "";
+      }
+    }
+
+    updated[action] = combo;
+    keybinds = updated;
+    saveKeybinds();
+  }
+
+  async function runKeybindAction(action: KeybindAction) {
+    switch (action) {
+      case "playPause":
+        await play();
+        break;
+      case "previous":
+        await previous();
+        break;
+      case "next":
+        await next();
+        break;
+      case "repeat":
+        await repeat();
+        break;
+      case "shuffle":
+        await shuffle();
+        break;
+      case "mute":
+        await toggleMute();
+        break;
+      case "toggleSearch":
+        toggleSearchFocus();
+        break;
+      case "toggleSettings":
+        toggleSettings();
+        break;
+    }
+  }
+
+  async function handleGlobalKeydown(event: KeyboardEvent) {
+    if (captureAction) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.key === "Escape") {
+        captureAction = null;
+        return;
+      }
+
+      if (isModifierOnlyKey(event.key)) {
+        return;
+      }
+
+      const combo = keyEventToCombo(event);
+      if (!combo) return;
+
+      setKeybind(captureAction, combo);
+      captureAction = null;
+      return;
+    }
+
+    const combo = keyEventToCombo(event);
+    const matchedEntry = (
+      Object.entries(keybinds) as Array<[KeybindAction, string]>
+    ).find(([, value]) => value && value === combo);
+
+    if (isSettingsOpen) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSettings();
+        return;
+      }
+
+      if (matchedEntry?.[0] === "toggleSettings") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSettings();
+      }
+
+      return;
+    }
+
+    if (!matchedEntry) return;
+
+    const targetIsEditable = isEditableTarget(event.target);
+    const action = matchedEntry[0];
+
+    if (
+      targetIsEditable &&
+      action !== "toggleSearch" &&
+      action !== "toggleSettings"
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    await runKeybindAction(matchedEntry[0]);
+  }
+
   $: if (hasInitialized && searchQuery !== lastSearchedQuery) {
     if (searchTimeout) clearTimeout(searchTimeout);
 
@@ -382,6 +659,9 @@
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
+
+    loadKeybinds();
+    window.addEventListener("keydown", handleGlobalKeydown);
 
     void (async () => {
       try {
@@ -428,6 +708,8 @@
     })();
 
     return () => {
+      window.removeEventListener("keydown", handleGlobalKeydown);
+
       if (volumeTimeout) clearTimeout(volumeTimeout);
       if (searchTimeout) clearTimeout(searchTimeout);
       if (playbackInterval) clearInterval(playbackInterval);
@@ -437,213 +719,314 @@
 </script>
 
 <div class="app-shell">
-  <div class="main-panel">
-    <div class="search-row">
-      <div class="search" data-tauri-drag-region>
-        <input
-          type="text"
-          bind:value={searchQuery}
-          placeholder="Search songs, artist, album..."
-          on:keydown={handleSearchKeydown}
-        />
-        <button class="search-button" on:click={() => performSearch(true)}>
-          <Search size={16} />
-          <span>Search</span>
-        </button>
+  <div class="app-content" class:app-disabled={isSettingsOpen}>
+    <div class="main-panel">
+      <div class="search-row">
+        <div class="search-toolbar">
+          <button
+            class="settings-button"
+            on:click={openSettings}
+            title="Keybind settings"
+            aria-label="Open keybind settings"
+          >
+            <Settings2 size={18} />
+          </button>
+
+          <div class="search" data-tauri-drag-region>
+            <input
+              bind:this={searchInput}
+              type="text"
+              bind:value={searchQuery}
+              placeholder="Search songs, artist, album..."
+              on:keydown={handleSearchKeydown}
+            />
+            <button class="search-button" on:click={() => performSearch(true)}>
+              <Search size={16} />
+              <span>Search</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="song-list">
+        <div class="song-list-body">
+          <div class="song-list-header">
+            <div>#</div>
+            <div>Title</div>
+            <div>Artist</div>
+            <div>Album</div>
+            <div>Date</div>
+            <div>Ext</div>
+            <div class="header-duration">
+              {searchResultCount}
+              {searchResultCount === 1 ? " song" : " songs"}
+            </div>
+          </div>
+
+          {#each songs as song, i (song.id)}
+            <div
+              bind:this={songRowElements[i]}
+              class:selected={selectedSongId === song.id}
+              class="song-row"
+              role="button"
+              tabindex="0"
+              title={`Play ${song.title}`}
+              on:click={() => playSelectedSong(i)}
+              on:keydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  void playSelectedSong(i);
+                }
+              }}
+            >
+              <div class="index">{i + 1}</div>
+
+              <div class="title-cell">
+                <div class="song-title">{song.title}</div>
+                {#if song.remix}
+                  <div class="song-subtitle">{song.remix}</div>
+                {/if}
+              </div>
+
+              <div class="artist-cell">{song.artist}</div>
+              <div class="album-cell">{song.album}</div>
+              <div class="date-cell">{formatDate(song.release_year)}</div>
+              <div class="extension-cell">{song.extension}</div>
+              <div class="duration-cell">{formatDuration(song.duration)}</div>
+            </div>
+          {/each}
+        </div>
       </div>
     </div>
 
-    <div class="song-list">
-      <div class="song-list-body">
-        <div class="song-list-header">
-          <div>#</div>
-          <div>Title</div>
-          <div>Artist</div>
-          <div>Album</div>
-          <div>Date</div>
-          <div>Ext</div>
-          <div class="header-duration">
-            {searchResultCount}
-            {searchResultCount === 1 ? " song" : " songs"}
-          </div>
-        </div>
+    <div class="bottom-bar">
+      <div class="bottom-layout">
+        <div class="now-playing">
+          {#if currentSong}
+            <div class="now-playing-content">
+              <div class="now-playing-header">
+                <div class="now-playing-title">{currentSong.title}</div>
+              </div>
 
-        {#each songs as song, i (song.id)}
-          <div
-            bind:this={songRowElements[i]}
-            class:selected={selectedSongId === song.id}
-            class="song-row"
-            role="button"
-            tabindex="0"
-            title={`Play ${song.title}`}
-            on:click={() => playSelectedSong(i)}
-            on:keydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                void playSelectedSong(i);
-              }
-            }}
-          >
-            <div class="index">{i + 1}</div>
+              <div class="now-playing-meta">{currentSong.artist}</div>
+              <div class="now-playing-album">{currentSong.album}</div>
 
-            <div class="title-cell">
-              <div class="song-title">{song.title}</div>
-              {#if song.remix}
-                <div class="song-subtitle">{song.remix}</div>
+              {#if currentSong.remix}
+                <div class="now-playing-remix">{currentSong.remix}</div>
               {/if}
             </div>
-
-            <div class="artist-cell">{song.artist}</div>
-            <div class="album-cell">{song.album}</div>
-            <div class="date-cell">{formatDate(song.release_year)}</div>
-            <div class="extension-cell">{song.extension}</div>
-            <div class="duration-cell">{formatDuration(song.duration)}</div>
-          </div>
-        {/each}
-      </div>
-    </div>
-  </div>
-
-  <div class="bottom-bar">
-    <div class="bottom-layout">
-      <div class="now-playing">
-        {#if currentSong}
-          <div class="now-playing-content">
-            <div class="now-playing-header">
-              <div class="now-playing-title">{currentSong.title}</div>
+          {:else}
+            <div class="now-playing-content">
+              <div class="now-playing-header">
+                <div class="now-playing-title">Nothing playing</div>
+              </div>
+              <div class="now-playing-meta">Choose a song from the list</div>
             </div>
+          {/if}
+        </div>
 
-            <div class="now-playing-meta">{currentSong.artist}</div>
-            <div class="now-playing-album">{currentSong.album}</div>
+        <div class="center-player">
+          <div class="controls">
+            <button
+              on:click={shuffle}
+              class:active={isShuffle}
+              class="control-button secondary"
+              title="Shuffle"
+              aria-label="Shuffle"
+            >
+              <Shuffle size={18} strokeWidth={2.2} />
+            </button>
 
-            {#if currentSong.remix}
-              <div class="now-playing-remix">{currentSong.remix}</div>
-            {/if}
+            <button
+              on:click={previous}
+              class="control-button secondary"
+              title="Previous"
+              aria-label="Previous"
+            >
+              <SkipBack size={19} strokeWidth={2.2} />
+            </button>
+
+            <button
+              class="control-button play"
+              on:click={play}
+              title={isPlaying ? "Pause" : "Play"}
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              {#if isPlaying}
+                <Pause size={20} strokeWidth={2.6} fill="currentColor" />
+              {:else}
+                <Play size={20} strokeWidth={2.6} fill="currentColor" />
+              {/if}
+            </button>
+
+            <button
+              on:click={next}
+              class="control-button secondary"
+              title="Next"
+              aria-label="Next"
+            >
+              <SkipForward size={19} strokeWidth={2.2} />
+            </button>
+
+            <button
+              on:click={repeat}
+              class:active={isRepeat}
+              class="control-button secondary"
+              title="Repeat"
+              aria-label="Repeat"
+            >
+              <Repeat size={18} strokeWidth={2.2} />
+            </button>
           </div>
-        {:else}
-          <div class="now-playing-content">
-            <div class="now-playing-header">
-              <div class="now-playing-title">Nothing playing</div>
-            </div>
-            <div class="now-playing-meta">Choose a song from the list</div>
-          </div>
-        {/if}
-      </div>
 
-      <div class="center-player">
-        <div class="controls">
-          <button
-            on:click={shuffle}
-            class:active={isShuffle}
-            class="control-button secondary"
-            title="Shuffle"
-            aria-label="Shuffle"
-          >
-            <Shuffle size={18} strokeWidth={2.2} />
-          </button>
-
-          <button
-            on:click={previous}
-            class="control-button secondary"
-            title="Previous"
-            aria-label="Previous"
-          >
-            <SkipBack size={19} strokeWidth={2.2} />
-          </button>
-
-          <button
-            class="control-button play"
-            on:click={play}
-            title={isPlaying ? "Pause" : "Play"}
-            aria-label={isPlaying ? "Pause" : "Play"}
-          >
-            {#if isPlaying}
-              <Pause size={20} strokeWidth={2.6} fill="currentColor" />
+          <div class="seek-row">
+            <span class="seek-time">{formatDuration(currentSeekSeconds)}</span>
+            {#if currentSong}
+              <input
+                class="seek-slider"
+                type="range"
+                min="0"
+                max={currentSong.duration}
+                step="1"
+                bind:value={currentSeekSeconds}
+                on:input={onSeekInput}
+                on:change={onSeekChange}
+                on:pointerup={onSeekPointerUp}
+                aria-label="Seek"
+              />
             {:else}
-              <Play size={20} strokeWidth={2.6} fill="currentColor" />
+              <input
+                class="seek-slider"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+                disabled
+                aria-label="Seek"
+              />
+            {/if}
+            <span class="seek-time">
+              {currentSong ? formatDuration(currentSong.duration) : "0:00"}
+            </span>
+          </div>
+        </div>
+
+        <div class="volume">
+          <button
+            class="volume-button"
+            on:click={toggleMute}
+            title="Mute"
+            aria-label="Mute"
+          >
+            {#if isMuted || volume === 0}
+              <VolumeX size={18} strokeWidth={2.2} />
+            {:else if volume < 50}
+              <Volume1 size={18} strokeWidth={2.2} />
+            {:else}
+              <Volume2 size={18} strokeWidth={2.2} />
             {/if}
           </button>
 
-          <button
-            on:click={next}
-            class="control-button secondary"
-            title="Next"
-            aria-label="Next"
-          >
-            <SkipForward size={19} strokeWidth={2.2} />
-          </button>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            bind:value={volume}
+            on:input={changeVolume}
+            aria-label="Volume"
+          />
 
-          <button
-            on:click={repeat}
-            class:active={isRepeat}
-            class="control-button secondary"
-            title="Repeat"
-            aria-label="Repeat"
-          >
-            <Repeat size={18} strokeWidth={2.2} />
-          </button>
+          <span>{volume}%</span>
         </div>
-
-        <div class="seek-row">
-          <span class="seek-time">{formatDuration(currentSeekSeconds)}</span>
-          {#if currentSong}
-            <input
-              class="seek-slider"
-              type="range"
-              min="0"
-              max={currentSong.duration}
-              step="1"
-              bind:value={currentSeekSeconds}
-              on:input={onSeekInput}
-              on:pointerup={onSeekPointerUp}
-              aria-label="Seek"
-            />
-          {:else}
-            <input
-              class="seek-slider"
-              type="range"
-              min="0"
-              max="0"
-              value="0"
-              disabled
-              aria-label="Seek"
-            />
-          {/if}
-          <span class="seek-time">
-            {currentSong ? formatDuration(currentSong.duration) : "0:00"}
-          </span>
-        </div>
-      </div>
-
-      <div class="volume">
-        <button
-          class="volume-button"
-          on:click={toggleMute}
-          title="Mute"
-          aria-label="Mute"
-        >
-          {#if isMuted || volume === 0}
-            <VolumeX size={18} strokeWidth={2.2} />
-          {:else if volume < 50}
-            <Volume1 size={18} strokeWidth={2.2} />
-          {:else}
-            <Volume2 size={18} strokeWidth={2.2} />
-          {/if}
-        </button>
-
-        <input
-          type="range"
-          min="0"
-          max="100"
-          bind:value={volume}
-          on:input={changeVolume}
-          aria-label="Volume"
-        />
-
-        <span>{volume}%</span>
       </div>
     </div>
   </div>
+
+  {#if isSettingsOpen}
+    <div
+      class="settings-overlay"
+      role="presentation"
+      on:click={(event) => {
+        if (event.target === event.currentTarget) {
+          closeSettings();
+        }
+      }}
+    >
+      <div
+        class="settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keybind-settings-title"
+      >
+        <div class="settings-header">
+          <div class="settings-title-wrap">
+            <div class="settings-icon">
+              <Keyboard size={18} />
+            </div>
+            <div>
+              <h2 id="keybind-settings-title">Keybind settings</h2>
+              <p>Choose shortcuts for player controls and search focus.</p>
+            </div>
+          </div>
+
+          <button
+            class="settings-close"
+            on:click={closeSettings}
+            title="Close"
+            aria-label="Close settings"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div class="settings-list">
+          {#each Object.keys(keybindLabels) as actionKey}
+            <div class="keybind-row">
+              <div class="keybind-info">
+                <div class="keybind-name">
+                  {keybindLabels[actionKey as KeybindAction]}
+                </div>
+                <div class="keybind-help">
+                  {#if captureAction === actionKey}
+                    Press a key combination now. Press Escape to cancel.
+                  {:else}
+                    {keybinds[actionKey as KeybindAction] || "No shortcut set"}
+                  {/if}
+                </div>
+              </div>
+
+              <div class="keybind-actions">
+                <button
+                  class:capturing={captureAction === actionKey}
+                  class="keybind-button"
+                  on:click={() => startKeyCapture(actionKey as KeybindAction)}
+                >
+                  {captureAction === actionKey ? "Listening..." : "Set"}
+                </button>
+
+                <button
+                  class="keybind-button secondary-button"
+                  on:click={() => clearKeybind(actionKey as KeybindAction)}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+
+        <div class="settings-footer">
+          <button
+            class="footer-button secondary-button"
+            on:click={resetKeybinds}
+          >
+            Reset defaults
+          </button>
+          <button class="footer-button" on:click={closeSettings}>Done</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -668,27 +1051,77 @@
   }
 
   .app-shell {
+    width: 100%;
     height: 100vh;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 1rem;
+    max-height: 100vh;
     padding: 1rem;
     box-sizing: border-box;
     background: #121212;
     color: white;
     overflow: hidden;
+    position: relative;
+  }
+
+  .app-content {
+    min-height: 0;
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 1rem;
+    overflow: hidden;
+  }
+
+  .app-content.app-disabled {
+    pointer-events: none;
+    user-select: none;
   }
 
   .main-panel {
     min-height: 0;
+    overflow: hidden;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 0.75rem;
-    overflow: hidden;
   }
 
   .search-row {
     width: 100%;
+    min-height: 0;
+  }
+
+  .search-toolbar {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .settings-button {
+    width: 46px;
+    height: 46px;
+    border: 1px solid #323232;
+    border-radius: 999px;
+    background: #1b1b1b;
+    color: #f2f2f2;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease,
+      color 0.18s ease;
+  }
+
+  .settings-button:hover {
+    background: #242424;
+    border-color: #454545;
+    color: #ffffff;
+  }
+
+  .settings-button:active {
+    transform: scale(0.98);
   }
 
   .search {
@@ -710,6 +1143,10 @@
     background: #1f1f1f;
     color: white;
     box-sizing: border-box;
+  }
+
+  .search input:focus {
+    border-color: #5a5a5a;
   }
 
   .search-button {
@@ -752,6 +1189,7 @@
 
   .song-list-body {
     height: 100%;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -869,6 +1307,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    overflow: hidden;
   }
 
   .now-playing {
@@ -878,6 +1317,7 @@
     align-items: center;
     overflow: hidden;
     z-index: 1;
+    margin-right: max(1rem, 22vw);
   }
 
   .now-playing-content {
@@ -1028,8 +1468,8 @@
     justify-content: flex-end;
     gap: 0.5rem;
     align-self: end;
-    padding-bottom: 2px;
     z-index: 1;
+    margin-left: max(1rem, 22vw);
   }
 
   .volume-button {
@@ -1052,12 +1492,181 @@
     flex: 0 0 auto;
   }
 
-  .now-playing {
-    margin-right: max(1rem, 22vw);
+  .settings-overlay {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 30;
   }
 
-  .volume {
-    margin-left: max(1rem, 22vw);
+  .settings-modal {
+    width: min(720px, 100%);
+    max-width: 100%;
+    max-height: calc(100vh - 2rem);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    background: #181818;
+    border: 1px solid #2d2d2d;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+
+  .settings-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .settings-title-wrap {
+    display: flex;
+    gap: 0.9rem;
+    align-items: flex-start;
+  }
+
+  .settings-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: #222222;
+    color: #f4f4f4;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+
+  .settings-title-wrap h2 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .settings-title-wrap p {
+    margin: 0.25rem 0 0;
+    color: #b3b3b3;
+    font-size: 0.92rem;
+  }
+
+  .settings-close {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #303030;
+    border-radius: 999px;
+    background: #202020;
+    color: #f2f2f2;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .settings-close:hover {
+    background: #2a2a2a;
+    border-color: #484848;
+  }
+
+  .settings-list {
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    gap: 0.75rem;
+    padding-right: 0.1rem;
+  }
+
+  .keybind-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+    background: #1d1d1d;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+  }
+
+  .keybind-info {
+    min-width: 0;
+  }
+
+  .keybind-name {
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+
+  .keybind-help {
+    color: #b3b3b3;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .keybind-actions {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .keybind-button,
+  .footer-button,
+  .secondary-button {
+    border: 1px solid #323232;
+    border-radius: 999px;
+    background: #1b1b1b;
+    color: #f2f2f2;
+    cursor: pointer;
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 0.7rem 1rem;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease,
+      color 0.18s ease;
+  }
+
+  .keybind-button:hover,
+  .footer-button:hover,
+  .secondary-button:hover {
+    background: #242424;
+    border-color: #454545;
+  }
+
+  .keybind-button:active,
+  .footer-button:active,
+  .secondary-button:active {
+    transform: scale(0.98);
+  }
+
+  .keybind-button.capturing {
+    background: #1f3a2a;
+    border-color: #2c6b45;
+    color: #dff7e8;
+  }
+
+  .secondary-button {
+    background: transparent;
+    color: #d3d3d3;
+  }
+
+  .settings-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
   }
 
   @media (max-width: 1180px) {
@@ -1152,9 +1761,37 @@
     .song-row > :nth-child(6) {
       display: none;
     }
+
+    .keybind-row {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+
+    .keybind-actions {
+      justify-content: flex-start;
+    }
   }
 
   @media (max-width: 640px) {
+    .search-toolbar {
+      grid-template-columns: 1fr;
+    }
+
+    .settings-button {
+      width: 100%;
+      border-radius: 12px;
+      height: 44px;
+    }
+
+    .search {
+      grid-template-columns: 1fr;
+    }
+
+    .search-button {
+      width: 100%;
+      justify-content: center;
+    }
+
     .song-list-header,
     .song-row {
       grid-template-columns:
@@ -1169,6 +1806,14 @@
     .song-list-header > :nth-child(4),
     .song-row > :nth-child(4) {
       display: none;
+    }
+
+    .settings-footer {
+      flex-direction: column;
+    }
+
+    .footer-button {
+      width: 100%;
     }
   }
 </style>
