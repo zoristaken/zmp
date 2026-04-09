@@ -129,11 +129,25 @@
     if (index < 0) return;
 
     const row = songRowElements[index];
-    row?.scrollIntoView({
-      block: "center",
-      inline: "nearest",
-      behavior: "smooth",
-    });
+    const listBody = document.querySelector(
+      ".song-list-body",
+    ) as HTMLDivElement | null;
+
+    if (!row || !listBody) return;
+
+    const rowTop = row.offsetTop;
+    const rowBottom = rowTop + row.offsetHeight;
+    const viewTop = listBody.scrollTop;
+    const viewBottom = viewTop + listBody.clientHeight;
+
+    if (rowTop < viewTop) {
+      listBody.scrollTo({ top: rowTop, behavior: "smooth" });
+    } else if (rowBottom > viewBottom) {
+      listBody.scrollTo({
+        top: rowBottom - listBody.clientHeight,
+        behavior: "smooth",
+      });
+    }
   }
 
   async function saveSeekProgress() {
@@ -536,12 +550,12 @@
     const isSearchFocused = document.activeElement === searchInput;
 
     if (isSearchFocused) {
-      searchInput?.blur();
+      searchInput.blur();
       return;
     }
 
-    searchInput?.focus();
-    searchInput?.select();
+    searchInput.focus();
+    searchInput.select();
   }
 
   function setKeybind(action: KeybindAction, combo: string) {
@@ -1045,26 +1059,26 @@
   }
 
   :global(#app) {
-    width: 100%;
-    height: 100vh;
+    position: fixed;
+    inset: 0;
     overflow: hidden;
   }
 
   .app-shell {
-    width: 100%;
-    height: 100vh;
-    max-height: 100vh;
+    position: fixed;
+    inset: 0;
     padding: 1rem;
     box-sizing: border-box;
     background: #121212;
     color: white;
     overflow: hidden;
-    position: relative;
   }
 
   .app-content {
-    min-height: 0;
+    width: 100%;
     height: 100%;
+    min-height: 0;
+    min-width: 0;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 1rem;
@@ -1078,6 +1092,7 @@
 
   .main-panel {
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
@@ -1181,6 +1196,7 @@
 
   .song-list {
     min-height: 0;
+    min-width: 0;
     width: 100%;
     background: #181818;
     border-radius: 12px;
@@ -1190,6 +1206,7 @@
   .song-list-body {
     height: 100%;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
     overflow-x: hidden;
   }
