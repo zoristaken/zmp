@@ -82,6 +82,8 @@ impl Player {
     }
 
     pub fn set_queue(&mut self, songs: Vec<Song>) -> anyhow::Result<()> {
+        let current_song = self.current_index.and_then(|i| self.queue.get(i)).cloned();
+
         self.queue = songs;
 
         if self.queue.is_empty() {
@@ -90,13 +92,28 @@ impl Player {
             return Ok(());
         }
 
-        self.current_index = Some(0);
-        self.load_current_track(true)
+        //set the current index to the previous song index if existed
+        //this is needed because the list of songs can change, in which case
+        //the current index of the previous song can be different
+        self.current_index = current_song
+            .and_then(|song| self.queue.iter().position(|s| *s == song))
+            .or(None);
+
+        Ok(())
     }
 
-    pub fn play_song_at(&mut self, index: usize, start_playing: bool) -> anyhow::Result<()> {
+    pub fn play_song_at(
+        &mut self,
+        index: usize,
+        start_playing: bool,
+        ignore_if_same: bool,
+    ) -> anyhow::Result<()> {
         if index >= self.queue.len() {
             anyhow::bail!("index out of bounds");
+        }
+
+        if ignore_if_same && self.current_index == Some(index) {
+            return Ok(());
         }
 
         self.current_index = Some(index);
@@ -144,8 +161,11 @@ impl Player {
             return Ok(());
         }
 
+        //if repeat is enabled, previous just needs to "restart" the song
+        //seeking to the beginning allows that functionality without
+        //having to reload the same track
         if self.repeat {
-            return self.load_current_track(true);
+            return self.seek_to_seconds(0);
         }
 
         let prev_index = match self.current_index {

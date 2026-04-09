@@ -129,25 +129,11 @@
     if (index < 0) return;
 
     const row = songRowElements[index];
-    const listBody = document.querySelector(
-      ".song-list-body",
-    ) as HTMLDivElement | null;
-
-    if (!row || !listBody) return;
-
-    const rowTop = row.offsetTop;
-    const rowBottom = rowTop + row.offsetHeight;
-    const viewTop = listBody.scrollTop;
-    const viewBottom = viewTop + listBody.clientHeight;
-
-    if (rowTop < viewTop) {
-      listBody.scrollTo({ top: rowTop, behavior: "smooth" });
-    } else if (rowBottom > viewBottom) {
-      listBody.scrollTo({
-        top: rowBottom - listBody.clientHeight,
-        behavior: "smooth",
-      });
-    }
+    row?.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: "smooth",
+    });
   }
 
   async function saveSeekProgress() {
@@ -306,7 +292,10 @@
     }
   }
 
-  async function performSearch(autoplayFirst = false) {
+  async function performSearch() {
+    const previousSelectedSongId = selectedSongId;
+    const previousSelectedIndex = selectedIndex;
+
     try {
       const count = await invoke<number>("search_songs", {
         query: searchQuery,
@@ -316,19 +305,39 @@
       lastSearchedQuery = searchQuery;
       await refreshLoadedSongs();
 
-      if (selectedSongId !== null) {
+      let nextSelectedIndex: number | null = null;
+
+      if (previousSelectedSongId !== null) {
         const visibleSelectedIndex = songs.findIndex(
-          (song) => song.id === selectedSongId,
+          (song) => song.id === previousSelectedSongId,
         );
-        selectedIndex = visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
-      } else {
-        selectedIndex = null;
+        nextSelectedIndex =
+          visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
       }
+
+      if (
+        nextSelectedIndex === null &&
+        previousSelectedIndex !== null &&
+        previousSelectedIndex >= 0 &&
+        previousSelectedIndex < songs.length
+      ) {
+        nextSelectedIndex = previousSelectedIndex;
+      }
+
+      if (nextSelectedIndex === null && count > 0) {
+        nextSelectedIndex = 0;
+      }
+
+      selectedIndex = nextSelectedIndex;
+      selectedSongId =
+        nextSelectedIndex !== null && songs[nextSelectedIndex]
+          ? songs[nextSelectedIndex].id
+          : null;
 
       await ensureSelectedSongIsVisible();
 
-      if (autoplayFirst && count > 0) {
-        await playSelectedSong(0);
+      if (nextSelectedIndex !== null) {
+        await playSelectedSong(nextSelectedIndex);
       }
     } catch (err) {
       console.error("Failed to search songs:", err);
@@ -344,7 +353,7 @@
         searchTimeout = undefined;
       }
 
-      await performSearch(true);
+      await performSearch();
       searchInput?.blur();
     }
   }
@@ -667,7 +676,7 @@
     if (searchTimeout) clearTimeout(searchTimeout);
 
     searchTimeout = setTimeout(() => {
-      void performSearch(false);
+      void performSearch();
     }, 150);
   }
 
@@ -754,7 +763,7 @@
               placeholder="Search songs, artist, album..."
               on:keydown={handleSearchKeydown}
             />
-            <button class="search-button" on:click={() => performSearch(true)}>
+            <button class="search-button" on:click={() => performSearch()}>
               <Search size={16} />
               <span>Search</span>
             </button>

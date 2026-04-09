@@ -95,7 +95,7 @@ pub async fn load(
         if !songs.is_empty() {
             let index = saved_index.min(songs.len() - 1);
             player
-                .play_song_at(index, saved_play_pause_flag)
+                .play_song_at(index, saved_play_pause_flag, false)
                 .map_err(|e| e.to_string())?;
 
             if saved_seek > 0 {
@@ -167,7 +167,7 @@ pub async fn play_song_at(
         let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
         player.set_queue(songs).map_err(|e| e.to_string())?;
         player
-            .play_song_at(index, true)
+            .play_song_at(index, true, true)
             .map_err(|e| e.to_string())?;
         player.current_index()
     };
@@ -217,7 +217,7 @@ pub async fn search_songs(
         state
             .zmp
             .song
-            .search_by_db(&state.zmp.pool, &words, 100)
+            .search_by_db(&state.zmp.pool, &words, 10000)
             .await
             .map_err(|e| e.to_string())?
     };
