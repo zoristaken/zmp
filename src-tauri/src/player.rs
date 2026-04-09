@@ -1,7 +1,7 @@
 use std::{fs::File, io::BufReader, time::Duration};
 
 use anyhow::Context;
-use rand::seq::IndexedRandom;
+use rand::RngExt;
 use rodio::Decoder;
 
 use crate::song::Song;
@@ -32,6 +32,7 @@ impl Player {
         player.set_volume(volume);
 
         Self {
+            //stream handle is kept so it doesn't get dropped, as the mixer is needed for the player
             _stream_handle: stream_handle,
             player,
             queue: Vec::new(),
@@ -102,10 +103,6 @@ impl Player {
         self.load_current_track(start_playing)
     }
 
-    pub fn stop(&self) {
-        self.player.stop();
-    }
-
     pub fn play_pause(&self, should_play: bool) {
         if should_play {
             self.player.play();
@@ -123,28 +120,19 @@ impl Player {
             return self.load_current_track(true);
         }
 
+        let len = self.queue.len();
         let next_index = match self.current_index {
             None => 0,
-            Some(current) => {
-                if self.shuffle {
-                    let candidates: Vec<usize> =
-                        (0..self.queue.len()).filter(|&i| i != current).collect();
-
-                    if candidates.is_empty() {
-                        current
-                    } else {
-                        let mut rng = rand::rng();
-                        *candidates.choose(&mut rng).unwrap()
-                    }
+            Some(current) if self.shuffle && len > 1 => {
+                let mut rng = rand::rng();
+                let r = rng.random_range(0..len - 1);
+                if r >= current {
+                    r + 1
                 } else {
-                    let next = current + 1;
-                    if next >= self.queue.len() {
-                        0
-                    } else {
-                        next
-                    }
+                    r
                 }
             }
+            Some(current) => (current + 1) % len,
         };
 
         self.current_index = Some(next_index);
