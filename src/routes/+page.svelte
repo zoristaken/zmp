@@ -138,6 +138,7 @@
   let lastSearchedQuery = "";
 
   let searchInput: HTMLInputElement | null = null;
+  let volumeSlider: HTMLInputElement | null = null;
   let isSettingsOpen = false;
   let captureAction: KeybindAction | null = null;
   let keybinds: KeybindMap = { ...defaultKeybinds };
@@ -477,26 +478,43 @@
     }
   }
 
-  function changeVolume(event: Event) {
-    const value = Number((event.target as HTMLInputElement).value);
-    volume = value;
-
-    if (value === 0) {
-      isMuted = true;
-    } else {
-      isMuted = false;
-      previousVolume = value;
-    }
-
+  function queueVolumePersist(nextVolume: number) {
     if (volumeTimeout) clearTimeout(volumeTimeout);
 
     volumeTimeout = setTimeout(async () => {
       try {
-        await invoke("set_volume", { volume: value / 100 });
+        await invoke("set_volume", { volume: nextVolume / 100 });
       } catch (err) {
         console.error("Failed to set volume:", err);
       }
     }, 50);
+  }
+
+  function setVolumeValue(nextVolume: number) {
+    const clamped = Math.max(0, Math.min(100, Math.round(nextVolume)));
+    volume = clamped;
+
+    if (clamped === 0) {
+      isMuted = true;
+    } else {
+      isMuted = false;
+      previousVolume = clamped;
+    }
+
+    queueVolumePersist(clamped);
+  }
+
+  function changeVolume(event: Event) {
+    const value = Number((event.target as HTMLInputElement).value);
+    setVolumeValue(value);
+  }
+
+  function handleVolumeWheel(event: WheelEvent) {
+    event.preventDefault();
+
+    const delta = event.deltaY < 0 ? 2 : -2;
+    setVolumeValue(volume + delta);
+    volumeSlider?.blur();
   }
 
   async function toggleMute() {
@@ -890,6 +908,13 @@
     searchInput.select();
   }
 
+  function blurActiveElement() {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  }
+
   async function setKeybind(action: KeybindAction, combo: string) {
     const updated = { ...keybinds };
     const actionsToPersist: Array<[KeybindAction, string]> = [];
@@ -933,11 +958,13 @@
         break;
       case "toggleSearch":
         toggleSearchFocus();
-        break;
+        return;
       case "toggleSettings":
         toggleSettings();
-        break;
+        return;
     }
+
+    blurActiveElement();
   }
 
   async function pickMusicFolder() {
@@ -1705,11 +1732,13 @@
           </button>
 
           <input
+            bind:this={volumeSlider}
             type="range"
             min="0"
             max="100"
             bind:value={volume}
             on:input={changeVolume}
+            on:wheel={handleVolumeWheel}
             aria-label="Volume"
           />
 
@@ -1954,17 +1983,9 @@
   {/if}
 
   {#if isMusicFolderConfirmOpen && pendingMusicFolderPath}
-    <div
-      class="settings-overlay"
-      role="presentation"
-      on:click={(event) => {
-        if (event.target === event.currentTarget) {
-          closeMusicFolderConfirm();
-        }
-      }}
-    >
+    <div class="settings-overlay confirm-overlay" role="presentation">
       <div
-        class="settings-modal warning-modal"
+        class="settings-modal warning-modal confirm-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="music-folder-confirm-title"
@@ -1986,8 +2007,8 @@
           <button
             class="settings-close"
             on:click={closeMusicFolderConfirm}
-            title="Close"
-            aria-label="Close warning"
+            title="Cancel"
+            aria-label="Cancel music folder change"
           >
             <X size={18} />
           </button>
@@ -2247,6 +2268,11 @@
     position: fixed;
     inset: 0;
     overflow: hidden;
+  }
+
+  :global(*:focus-visible) {
+    outline: none;
+    box-shadow: none;
   }
 
   .app-shell {
@@ -2788,10 +2814,11 @@
   .settings-overlay {
     position: fixed;
     inset: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     display: grid;
     justify-items: center;
-    align-items: start;
+    align-items: center;
     padding: 1rem;
     box-sizing: border-box;
     background: rgba(0, 0, 0, 0.55);
@@ -2800,11 +2827,10 @@
 
   .settings-modal {
     width: min(720px, 100%);
+    height: min(880px, calc(100dvh - 2rem));
     max-width: 100%;
-    max-height: calc(100vh - 2rem);
-    margin-top: 0;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     overflow: hidden;
     background: #181818;
     border: 1px solid #2d2d2d;
@@ -2816,12 +2842,22 @@
 
   .filter-modal {
     width: min(620px, 100%);
-    height: min(720px, calc(100vh - 2rem));
-    max-height: min(720px, calc(100vh - 2rem));
+    height: min(720px, calc(100dvh - 2rem));
+    max-height: min(720px, calc(100dvh - 2rem));
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .warning-modal {
     width: min(560px, 100%);
+  }
+
+  .confirm-overlay {
+    z-index: 50;
+  }
+
+  .confirm-modal {
+    z-index: 51;
   }
 
   .filter-modal-content {
@@ -2949,6 +2985,8 @@
     display: grid;
     gap: 0.75rem;
     padding-right: 0.1rem;
+    align-content: start;
+    align-items: start;
   }
 
   .settings-card {
@@ -3116,6 +3154,19 @@
     gap: 0.75rem;
     margin-top: 1rem;
     flex-wrap: wrap;
+  }
+
+  .filter-modal .settings-footer {
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: nowrap;
+    flex-direction: row;
+  }
+
+  .filter-modal .settings-footer .footer-button {
+    width: auto;
+    min-width: 110px;
+    flex: 0 0 auto;
   }
 
   .filter-song-summary {
@@ -3504,11 +3555,11 @@
       display: none;
     }
 
-    .settings-footer {
+    .settings-modal:not(.filter-modal):not(.warning-modal) .settings-footer {
       flex-direction: column;
     }
 
-    .footer-button {
+    .settings-modal:not(.filter-modal):not(.warning-modal) .footer-button {
       width: 100%;
     }
 
@@ -3517,8 +3568,17 @@
     }
 
     .filter-modal {
-      height: calc(100vh - 2rem);
-      max-height: calc(100vh - 2rem);
+      height: calc(100dvh - 2rem);
+      max-height: calc(100dvh - 2rem);
+    }
+
+    .filter-modal .settings-footer {
+      flex-direction: row;
+      justify-content: flex-end;
+    }
+
+    .filter-modal .settings-footer .footer-button {
+      width: auto;
     }
 
     .fixed-three-list {
