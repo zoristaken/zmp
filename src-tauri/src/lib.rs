@@ -16,6 +16,7 @@ pub mod player;
 pub mod setting;
 pub mod song;
 pub mod song_filter;
+mod song_mutation;
 mod song_query;
 pub mod sqlite;
 

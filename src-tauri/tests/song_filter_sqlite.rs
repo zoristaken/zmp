@@ -1,5 +1,5 @@
 pub mod common;
-use crate::common::{sample_song_filters, setup_db_with_song_and_filters, song_filter};
+use crate::common::{sample_song_filters, setup_db_with_song_and_filters};
 use zmp_lib::{song_filter::SongFilterService, sqlite::SqliteDb};
 
 #[tokio::test]

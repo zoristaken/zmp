@@ -979,12 +979,12 @@
     filterLibraryMessage = "";
 
     try {
-      const savedOk = await invoke<boolean>("create_update_filter", {
+      const savedOk = await invoke<boolean>("create_filter", {
         filterName: trimmed,
       });
 
       if (!savedOk) {
-        throw new Error("Backend reported create_update_filter = false");
+        throw new Error("Backend reported create_filter = false");
       }
 
       const savedFilters = await invoke<Filter[]>("get_filters");

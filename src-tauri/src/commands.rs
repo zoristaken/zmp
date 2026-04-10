@@ -669,12 +669,26 @@ pub async fn remove_filter(
     state: tauri::State<'_, AppState>,
     filter_id: i32,
 ) -> Result<bool, String> {
-    let result = state.zmp.filter.remove(&state.zmp.pool, filter_id).await;
+    let mut tx = state.zmp.pool.begin().await.map_err(|e| e.to_string())?;
 
-    match result {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
+    let removed = state
+        .zmp
+        .filter
+        .remove(&mut tx, filter_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if removed {
+        state
+            .zmp
+            .song_mutation
+            .refresh_all_song_search_blobs(&mut tx)
+            .await
+            .map_err(|e| e.to_string())?;
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(removed)
 }
 
 #[tauri::command]
@@ -708,8 +722,8 @@ pub async fn add_filter_to_song(
 ) -> Result<bool, String> {
     let result = state
         .zmp
-        .song_filter
-        .add(&state.zmp.pool, song_id, filter_id)
+        .song_mutation
+        .add_filter_to_song_and_reindex(&state.zmp.pool, song_id, filter_id)
         .await;
 
     match result {
@@ -725,8 +739,8 @@ pub async fn remove_filter_from_song(
 ) -> Result<bool, String> {
     let result = state
         .zmp
-        .song_filter
-        .remove(&state.zmp.pool, song_filter_id)
+        .song_mutation
+        .remove_filter_from_song_and_reindex(&state.zmp.pool, song_filter_id)
         .await;
 
     match result {

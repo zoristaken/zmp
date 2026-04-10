@@ -80,14 +80,6 @@ where
     ) -> anyhow::Result<Vec<SongWithFilters>>
     where
         A: Acquire<'a, Database = DB> + Send;
-
-    async fn get_by_id_with_filters<'a, A>(
-        &self,
-        acquiree: A,
-        id: i32,
-    ) -> anyhow::Result<SongWithFilters>
-    where
-        A: Acquire<'a, Database = DB> + Send;
 }
 
 pub struct SongQueryService<R, DB>
@@ -137,16 +129,5 @@ where
         self.repo
             .search_by_db_with_filters(acquiree, words, max_results)
             .await
-    }
-
-    pub async fn get_by_id_with_filters<'a, A>(
-        &self,
-        acquiree: A,
-        id: i32,
-    ) -> anyhow::Result<SongWithFilters>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.repo.get_by_id_with_filters(acquiree, id).await
     }
 }

@@ -9,6 +9,7 @@ use crate::{
     setting::{SettingRepository, SettingService},
     song::{SongRepository, SongService},
     song_filter::{SongFilterRepository, SongFilterService},
+    song_mutation::{SongMutationRepository, SongMutationService},
     song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
     sqlite::SqliteDb,
 };
@@ -29,11 +30,13 @@ where
         + FilterRepository<DB>
         + SongFilterRepository<DB>
         + SongQueryRepository<DB>
+        + SongMutationRepository<DB>
         + HasPool<DB>,
 {
     pub setting: SettingService<R, DB>,
     pub song: SongService<R, DB>,
     pub song_query: SongQueryService<R, DB>,
+    pub song_mutation: SongMutationService<R, DB>,
     pub song_filter: SongFilterService<R, DB>,
     pub filter: FilterService<R, DB>,
     pub metadata_parser: MetadataParser,
@@ -49,6 +52,7 @@ where
         + FilterRepository<DB>
         + SongFilterRepository<DB>
         + SongQueryRepository<DB>
+        + SongMutationRepository<DB>
         + HasPool<DB>
         + Clone,
 {
@@ -63,6 +67,7 @@ where
             setting,
             song: SongService::new(repos.clone()),
             song_query: SongQueryService::new(repos.clone()),
+            song_mutation: SongMutationService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             filter: FilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
