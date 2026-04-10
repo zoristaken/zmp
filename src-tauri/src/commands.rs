@@ -1,4 +1,5 @@
 use serde::Serialize;
+use sqlx::Sqlite;
 use tauri::{AppHandle, Emitter};
 
 use crate::{
@@ -14,6 +15,47 @@ struct TrackChangedPayload {
 fn emit_track_changed(app: &AppHandle, current_index: Option<usize>) -> Result<(), String> {
     app.emit("track-changed", TrackChangedPayload { current_index })
         .map_err(|e| e.to_string())
+}
+
+async fn refresh_loaded_song_state_in_tx(
+    state: &AppState,
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+) -> Result<(), String> {
+    let saved_search = state
+        .zmp
+        .setting
+        .get_saved_search_blob(&mut *tx)
+        .await
+        .unwrap_or_default();
+
+    let songs: Vec<SongWithFilters> = if saved_search.trim().is_empty() {
+        state
+            .zmp
+            .song_query
+            .list_songs_with_filters(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        let words: Vec<&str> = saved_search.split_whitespace().collect();
+
+        state
+            .zmp
+            .song_query
+            .search_by_db_with_filters(&mut *tx, &words, 10000)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    {
+        let mut stored = state
+            .loaded_songs
+            .lock()
+            .map_err(|_| "failed to lock loaded songs".to_string())?;
+
+        *stored = songs;
+    }
+
+    Ok(())
 }
 
 //TODO: temporary mock of what a setup would look like
@@ -666,6 +708,7 @@ pub async fn create_filter(
 
 #[tauri::command]
 pub async fn remove_filter(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     filter_id: i32,
 ) -> Result<bool, String> {
@@ -685,9 +728,17 @@ pub async fn remove_filter(
             .refresh_all_song_search_blobs(&mut tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        refresh_loaded_song_state_in_tx(&state, &mut tx).await?
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    if removed {
+        let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+        emit_track_changed(&app, player.current_index())?;
+    }
+
     Ok(removed)
 }
 
@@ -716,35 +767,58 @@ pub async fn get_filters_for_song(
 
 #[tauri::command]
 pub async fn add_filter_to_song(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     song_id: i32,
     filter_id: i32,
 ) -> Result<bool, String> {
-    let result = state
+    let mut tx = state.zmp.pool.begin().await.map_err(|e| e.to_string())?;
+
+    let saved = state
         .zmp
         .song_mutation
-        .add_filter_to_song_and_reindex(&state.zmp.pool, song_id, filter_id)
-        .await;
+        .add_filter_to_song_and_reindex(&mut tx, song_id, filter_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    match result {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
+    if saved {
+        refresh_loaded_song_state_in_tx(&state, &mut tx).await?
     }
-}
 
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    if saved {
+        let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+        emit_track_changed(&app, player.current_index())?;
+    }
+
+    Ok(saved)
+}
 #[tauri::command]
 pub async fn remove_filter_from_song(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     song_filter_id: i32,
 ) -> Result<bool, String> {
-    let result = state
+    let mut tx = state.zmp.pool.begin().await.map_err(|e| e.to_string())?;
+
+    let removed = state
         .zmp
         .song_mutation
-        .remove_filter_from_song_and_reindex(&state.zmp.pool, song_filter_id)
-        .await;
+        .remove_filter_from_song_and_reindex(&mut tx, song_filter_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    match result {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
+    if removed {
+        refresh_loaded_song_state_in_tx(&state, &mut tx).await?
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    if removed {
+        let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+        emit_track_changed(&app, player.current_index())?;
+    }
+
+    Ok(removed)
 }

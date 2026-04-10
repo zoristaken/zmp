@@ -18,7 +18,6 @@
     Keyboard,
     Tags,
     Plus,
-    Trash2,
   } from "lucide-svelte";
 
   type Filter = {
@@ -750,11 +749,7 @@
     const targetIsEditable = isEditableTarget(event.target);
     const action = matchedEntry[0];
 
-    if (
-      targetIsEditable &&
-      action !== "toggleSearch" &&
-      action !== "toggleSettings"
-    ) {
+    if (targetIsEditable && action !== "toggleSearch") {
       return;
     }
 
@@ -1212,14 +1207,13 @@
 
                 <div class="row-meta-under">
                   <button
-                    class="song-inline-filter-button"
-                    title="Add existing filter to this song"
-                    aria-label={`Add filter to ${songEntry.song.title}`}
+                    class="song-inline-filter-button icon-only"
+                    title="Manage filters for this song"
+                    aria-label={`Manage filters for ${songEntry.song.title}`}
                     on:click|stopPropagation={() =>
                       openSongFilterMenu(songEntry)}
                   >
                     <Tags size={13} />
-                    <span>Add filter</span>
                   </button>
 
                   {#if songEntry.filters.length > 0}
@@ -1420,8 +1414,8 @@
               <Tags size={18} />
             </div>
             <div>
-              <h2 id="song-filter-title">Add existing filter to song</h2>
-              <p>Select one of the saved filters and attach it to this song.</p>
+              <h2 id="song-filter-title">Manage song filters</h2>
+              <p>Add or remove saved filters for this song.</p>
             </div>
           </div>
 
@@ -1435,66 +1429,84 @@
           </button>
         </div>
 
-        <div class="filter-song-summary">
-          <div class="filter-song-title">{songFilterTargetSong.song.title}</div>
-          <div class="filter-song-meta">
-            {songFilterTargetSong.song.artist}
-            {#if songFilterTargetSong.song.album}
-              · {songFilterTargetSong.song.album}
+        <div class="filter-modal-content song-filter-layout">
+          <div class="filter-song-summary">
+            <div class="filter-song-title">
+              {songFilterTargetSong.song.title}
+            </div>
+            <div class="filter-song-meta">
+              {songFilterTargetSong.song.artist}
+              {#if songFilterTargetSong.song.album}
+                · {songFilterTargetSong.song.album}
+              {/if}
+            </div>
+          </div>
+
+          <div class="filter-save-message message-slot">
+            {songFilterMessage || "\u00A0"}
+          </div>
+
+          <div class="filter-existing fixed-current-filters">
+            <div class="filter-existing-label">Current filters</div>
+
+            {#if songFilterTargetSong.filters.length > 0}
+              <div class="list-panel fixed-three-list">
+                <div class="stacked-filter-list">
+                  {#each songFilterTargetSong.filters as filter (filter.id)}
+                    <div class="stacked-filter-row">
+                      <div class="stacked-filter-label">
+                        <span class="song-tag">{filter.name}</span>
+                      </div>
+                      <button
+                        class="current-filter-remove"
+                        on:click={() => removeFilterFromSong(filter)}
+                        disabled={isRemovingSongFilter}
+                        title={`Remove ${filter.name}`}
+                        aria-label={`Remove ${filter.name}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {:else}
+              <div class="list-panel fixed-three-list empty-list-panel">
+                <div class="filter-empty padded-empty">
+                  No filters on this song yet.
+                </div>
+              </div>
             {/if}
           </div>
-        </div>
 
-        {#if songFilterMessage}
-          <div class="filter-save-message">{songFilterMessage}</div>
-        {/if}
+          <div class="filter-existing grow-panel">
+            <div class="filter-existing-label">Available filters</div>
 
-        <div class="filter-existing">
-          <div class="filter-existing-label">Current filters</div>
-
-          {#if songFilterTargetSong.filters.length > 0}
-            <div class="current-filter-list">
-              {#each songFilterTargetSong.filters as filter (filter.id)}
-                <div class="current-filter-item">
-                  <span class="song-tag">{filter.name}</span>
-                  <button
-                    class="current-filter-remove"
-                    on:click={() => removeFilterFromSong(filter)}
-                    disabled={isRemovingSongFilter}
-                    title={`Remove ${filter.name}`}
-                    aria-label={`Remove ${filter.name}`}
-                  >
-                    <X size={12} />
-                  </button>
+            {#if availableFiltersForSong(songFilterTargetSong).length > 0}
+              <div class="list-panel fill-list-panel">
+                <div class="stacked-filter-list">
+                  {#each availableFiltersForSong(songFilterTargetSong) as filter (filter.id)}
+                    <button
+                      class="available-filter-row"
+                      on:click={() => assignExistingFilterToSong(filter)}
+                      disabled={isAssigningSongFilter}
+                    >
+                      <span class="available-filter-name">{filter.name}</span>
+                      <span class="available-filter-action" aria-hidden="true">
+                        <Plus size={14} />
+                      </span>
+                    </button>
+                  {/each}
                 </div>
-              {/each}
-            </div>
-          {:else}
-            <div class="filter-empty">No filters on this song yet.</div>
-          {/if}
-        </div>
-
-        <div class="filter-existing">
-          <div class="filter-existing-label">Available filters</div>
-
-          {#if availableFiltersForSong(songFilterTargetSong).length > 0}
-            <div class="available-filter-list">
-              {#each availableFiltersForSong(songFilterTargetSong) as filter (filter.id)}
-                <button
-                  class="available-filter-button"
-                  on:click={() => assignExistingFilterToSong(filter)}
-                  disabled={isAssigningSongFilter}
-                >
-                  <span>{filter.name}</span>
-                  <Plus size={14} />
-                </button>
-              {/each}
-            </div>
-          {:else}
-            <div class="filter-empty">
-              No available filters. Create one in the filter library first.
-            </div>
-          {/if}
+              </div>
+            {:else}
+              <div class="list-panel fill-list-panel empty-list-panel">
+                <div class="filter-empty padded-empty">
+                  No available filters. Create one in the filter library first.
+                </div>
+              </div>
+            {/if}
+          </div>
         </div>
 
         <div class="settings-footer">
@@ -1546,7 +1558,7 @@
           </button>
         </div>
 
-        <div class="filter-form">
+        <div class="filter-modal-content library-filter-layout">
           <div class="filter-input-row">
             <input
               type="text"
@@ -1564,32 +1576,40 @@
             </button>
           </div>
 
-          {#if filterLibraryMessage}
-            <div class="filter-save-message">{filterLibraryMessage}</div>
-          {/if}
+          <div class="filter-save-message message-slot">
+            {filterLibraryMessage || "\u00A0"}
+          </div>
 
-          <div class="filter-existing">
+          <div class="filter-existing grow-panel">
             <div class="filter-existing-label">Saved filters</div>
 
             {#if allFilters.length > 0}
-              <div class="global-filter-list">
-                {#each allFilters as filter (filter.id)}
-                  <div class="current-filter-item">
-                    <span class="song-tag">{filter.name}</span>
-                    <button
-                      class="current-filter-remove danger-remove"
-                      on:click={() => removeGlobalFilter(filter)}
-                      disabled={isRemovingGlobalFilter}
-                      title={`Delete ${filter.name}`}
-                      aria-label={`Delete ${filter.name}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                {/each}
+              <div class="list-panel fill-list-panel">
+                <div class="stacked-filter-list">
+                  {#each allFilters as filter (filter.id)}
+                    <div class="stacked-filter-row">
+                      <div class="stacked-filter-label">
+                        <span class="song-tag">{filter.name}</span>
+                      </div>
+                      <button
+                        class="current-filter-remove danger-remove"
+                        on:click={() => removeGlobalFilter(filter)}
+                        disabled={isRemovingGlobalFilter}
+                        title={`Delete ${filter.name}`}
+                        aria-label={`Delete ${filter.name}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  {/each}
+                </div>
               </div>
             {:else}
-              <div class="filter-empty">No filters created yet.</div>
+              <div class="list-panel fill-list-panel empty-list-panel">
+                <div class="filter-empty padded-empty">
+                  No filters created yet.
+                </div>
+              </div>
             {/if}
           </div>
         </div>
@@ -1985,6 +2005,14 @@
       transform 0.18s ease;
   }
 
+  .song-inline-filter-button.icon-only {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+
   .song-inline-filter-button:hover {
     background: #262626;
     border-color: #474747;
@@ -2262,6 +2290,29 @@
 
   .filter-modal {
     width: min(620px, 100%);
+    height: min(720px, calc(100vh - 2rem));
+    max-height: min(720px, calc(100vh - 2rem));
+  }
+
+  .filter-modal-content {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .song-filter-layout,
+  .library-filter-layout {
+    display: grid;
+    gap: 1rem;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .song-filter-layout {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+
+  .library-filter-layout {
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 
   .settings-header {
@@ -2415,7 +2466,7 @@
   }
 
   .filter-song-summary {
-    margin-bottom: 1rem;
+    margin-bottom: 0;
     padding: 0.9rem 1rem;
     background: #1d1d1d;
     border: 1px solid #2a2a2a;
@@ -2431,12 +2482,6 @@
   .filter-song-meta {
     color: #b3b3b3;
     font-size: 0.92rem;
-  }
-
-  .filter-form {
-    display: grid;
-    gap: 1rem;
-    min-height: 0;
   }
 
   .filter-input-row {
@@ -2463,21 +2508,15 @@
     border-color: #5a5a5a;
   }
 
-  .filter-input-row .footer-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .filter-input-row .footer-button:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
-  }
-
   .filter-save-message {
     color: #d6d6d6;
     font-size: 0.9rem;
-    margin-bottom: 0.5rem;
+  }
+
+  .message-slot {
+    min-height: 1.25rem;
+    display: flex;
+    align-items: center;
   }
 
   .filter-existing {
@@ -2485,6 +2524,18 @@
     border: 1px solid #2a2a2a;
     border-radius: 12px;
     padding: 0.9rem 1rem;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .grow-panel {
+    min-height: 0;
+  }
+
+  .fixed-current-filters {
+    min-height: 0;
   }
 
   .filter-existing-label {
@@ -2497,50 +2548,120 @@
     font-size: 0.92rem;
   }
 
-  .available-filter-list,
-  .global-filter-list,
-  .current-filter-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.55rem;
+  .padded-empty {
+    padding: 0.85rem;
   }
 
-  .available-filter-button {
-    border: 1px solid #323232;
-    border-radius: 999px;
-    background: #1b1b1b;
+  .list-panel {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    background: #181818;
+  }
+
+  .fill-list-panel {
+    height: 100%;
+    max-height: none;
+  }
+
+  .fixed-three-list {
+    height: 145px;
+    max-height: 145px;
+  }
+
+  .empty-list-panel {
+    display: block;
+  }
+
+  .stacked-filter-list {
+    display: block;
+  }
+
+  .stacked-filter-row,
+  .available-filter-row {
+    border-bottom: 1px solid #202020;
+  }
+
+  .stacked-filter-list > :last-child {
+    border-bottom: none;
+  }
+
+  .stacked-filter-row {
+    min-height: 48px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 28px;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    box-sizing: border-box;
+    background: transparent;
+  }
+
+  .stacked-filter-label {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .stacked-filter-label .song-tag {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .available-filter-row {
+    width: 100%;
+    min-height: 48px;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    border-radius: 0;
+    background: transparent;
     color: #f2f2f2;
     cursor: pointer;
-    font-size: 0.84rem;
-    font-weight: 600;
-    padding: 0.45rem 0.75rem;
-    display: inline-flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 28px;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    box-sizing: border-box;
+    text-align: left;
     transition:
       background 0.18s ease,
-      border-color 0.18s ease,
-      transform 0.18s ease;
+      color 0.18s ease;
   }
 
-  .available-filter-button:hover {
+  .available-filter-row:hover {
     background: #242424;
-    border-color: #454545;
   }
 
-  .available-filter-button:active {
-    transform: scale(0.98);
+  .available-filter-row:active {
+    background: #2a2a2a;
   }
 
-  .available-filter-button:disabled {
+  .available-filter-row:disabled {
     opacity: 0.65;
     cursor: not-allowed;
   }
 
-  .current-filter-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
+  .available-filter-name {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .available-filter-action {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    justify-self: end;
+    flex: 0 0 auto;
   }
 
   .current-filter-remove {
@@ -2553,6 +2674,9 @@
     cursor: pointer;
     display: grid;
     place-items: center;
+    justify-self: center;
+    padding: 0;
+    margin-right: 0.25rem;
     transition:
       background 0.18s ease,
       border-color 0.18s ease,
@@ -2730,6 +2854,16 @@
 
     .filter-input-row {
       grid-template-columns: 1fr;
+    }
+
+    .filter-modal {
+      height: calc(100vh - 2rem);
+      max-height: calc(100vh - 2rem);
+    }
+
+    .fixed-three-list {
+      height: 145px;
+      max-height: 145px;
     }
   }
 </style>
