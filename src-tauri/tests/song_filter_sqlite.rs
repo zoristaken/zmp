@@ -8,10 +8,7 @@ async fn integration_add_inserts_song_filter() {
     let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite.clone());
 
-    service
-        .add(&service.pool, song_filter(4, 3, 1))
-        .await
-        .unwrap();
+    service.add(&service.pool, 3, 1).await.unwrap();
 
     let items = service.get_all(&service.pool).await.unwrap();
     assert_eq!(items.len(), 1);

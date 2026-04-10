@@ -1,5 +1,6 @@
 use anyhow::Context;
 use async_trait::async_trait;
+
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
     Acquire, Pool, Sqlite, SqlitePool,
@@ -12,6 +13,7 @@ use crate::{
     setting::{Setting, SettingRepository},
     song::{Song, SongRepository},
     song_filter::{SongFilter, SongFilterRepository},
+    song_query::{group_rows, SongQueryRepository, SongWithFilterRow, SongWithFilters},
 };
 
 #[derive(Clone)]
@@ -297,11 +299,28 @@ impl FilterRepository<Sqlite> for SqliteDb {
 
         Ok(filter)
     }
+
+    async fn remove_filter<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let result = sqlx::query("DELETE FROM filter WHERE id = ?")
+            .bind(filter_id)
+            .execute(conn)
+            .await;
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
 }
 
 #[async_trait]
 impl SongFilterRepository<Sqlite> for SqliteDb {
-    async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
+    async fn add<'a, A>(&self, acquiree: A, song_id: i32, filter_id: i32) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
@@ -311,13 +330,35 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
             "INSERT INTO song_filter (song_id, filter_id)
                     VALUES (?, ?)",
         )
-        .bind(song_filter.song_id)
-        .bind(song_filter.filter_id)
+        .bind(song_id)
+        .bind(filter_id)
         .execute(conn)
         .await?;
 
         Ok(())
     }
+
+    async fn remove_song_filter<'a, A>(
+        &self,
+        acquiree: A,
+        song_filter_id: i32,
+    ) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let result = sqlx::query("DELETE FROM song_filter WHERE id = ?")
+            .bind(song_filter_id)
+            .execute(conn)
+            .await;
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
     async fn add_multiple<'a, A>(
         &self,
         acquiree: A,
@@ -438,5 +479,145 @@ impl SettingRepository<Sqlite> for SqliteDb {
         .bind(key)
         .fetch_one(&mut *conn)
         .await?)
+    }
+}
+
+#[async_trait]
+impl SongQueryRepository<Sqlite> for SqliteDb {
+    async fn list_songs_with_filters<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<Vec<SongWithFilters>>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let mut conn = acquiree.acquire().await?;
+
+        let rows = sqlx::query_as::<_, crate::song_query::SongWithFilterRow>(
+            r#"
+        SELECT
+            s.id,
+            s.title,
+            s.artist,
+            s.release_year,
+            s.album,
+            s.remix,
+            s.search_blob,
+            s.file_path,
+            s.duration,
+            s.extension,
+            f.id AS filter_id,
+            f.name AS filter_name
+        FROM song s
+        LEFT JOIN song_filter sf ON sf.song_id = s.id
+        LEFT JOIN filter f ON f.id = sf.filter_id
+        ORDER BY s.title, f.name
+        "#,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(crate::song_query::group_rows(rows))
+    }
+
+    async fn search_by_db_with_filters<'a, A>(
+        &self,
+        acquiree: A,
+        words: &[&str],
+        max_results: i32,
+    ) -> anyhow::Result<Vec<SongWithFilters>>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        if words.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut conn = acquiree.acquire().await?;
+
+        let mut query = String::from(
+            r#"
+            SELECT
+                s.id,
+                s.title,
+                s.artist,
+                s.release_year,
+                s.album,
+                s.remix,
+                s.search_blob,
+                s.file_path,
+                s.duration,
+                s.extension,
+                f.id AS filter_id,
+                f.name AS filter_name
+            FROM song s
+            LEFT JOIN song_filter sf ON sf.song_id = s.id
+            LEFT JOIN filter f ON f.id = sf.filter_id
+            WHERE
+            "#,
+        );
+
+        for (i, _) in words.iter().enumerate() {
+            if i > 0 {
+                query.push_str(" AND ");
+            }
+            query.push_str("s.search_blob LIKE ?");
+        }
+
+        query.push_str(" ORDER BY s.title, f.name LIMIT ?");
+
+        let mut q = sqlx::query_as::<sqlx::Sqlite, SongWithFilterRow>(&query);
+
+        for word in words {
+            q = q.bind(format!("%{}%", word));
+        }
+
+        q = q.bind(max_results);
+
+        let rows = q.fetch_all(&mut *conn).await?;
+        Ok(group_rows(rows))
+    }
+
+    async fn get_by_id_with_filters<'a, A>(
+        &self,
+        acquiree: A,
+        id: i32,
+    ) -> anyhow::Result<SongWithFilters>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let mut conn = acquiree.acquire().await?;
+
+        let rows = sqlx::query_as::<_, crate::song_query::SongWithFilterRow>(
+            r#"
+            SELECT
+                s.id,
+                s.title,
+                s.artist,
+                s.release_year,
+                s.album,
+                s.remix,
+                s.search_blob,
+                s.file_path,
+                s.duration,
+                s.extension,
+                f.id AS filter_id,
+                f.name AS filter_name
+            FROM song s
+            LEFT JOIN song_filter sf ON sf.song_id = s.id
+            LEFT JOIN filter f ON f.id = sf.filter_id
+            WHERE s.id = ?
+            ORDER BY f.name
+            "#,
+        )
+        .bind(id)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        let mut grouped = crate::song_query::group_rows(rows);
+
+        grouped
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("song with id {} not found", id))
     }
 }

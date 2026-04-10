@@ -16,6 +16,7 @@ pub mod player;
 pub mod setting;
 pub mod song;
 pub mod song_filter;
+mod song_query;
 pub mod sqlite;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -61,6 +62,12 @@ pub fn run() {
             commands::set_play_pause_keybind,
             commands::get_focus_search_keybind,
             commands::set_focus_search_keybind,
+            commands::create_filter,
+            commands::get_filters,
+            commands::remove_filter,
+            commands::add_filter_to_song,
+            commands::get_filters_for_song,
+            commands::remove_filter_from_song,
         ])
         .setup(|app| {
             tauri::async_runtime::block_on(async move {

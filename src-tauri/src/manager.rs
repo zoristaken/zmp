@@ -3,16 +3,17 @@ use std::{path::Path, sync::Mutex};
 use sqlx::{Database, Pool, Sqlite};
 
 use crate::{
-    filter::FilterRepository,
+    filter::{FilterRepository, FilterService},
     metadata::MetadataParser,
     player::Player,
     setting::{SettingRepository, SettingService},
-    song::{Song, SongRepository, SongService},
-    song_filter::SongFilterRepository,
+    song::{SongRepository, SongService},
+    song_filter::{SongFilterRepository, SongFilterService},
+    song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
     sqlite::SqliteDb,
 };
 pub struct AppState {
-    pub loaded_songs: Mutex<Vec<Song>>,
+    pub loaded_songs: Mutex<Vec<SongWithFilters>>,
     pub zmp: PlayerManager<SqliteDb, Sqlite>,
 }
 
@@ -27,10 +28,14 @@ where
         + SongRepository<DB>
         + FilterRepository<DB>
         + SongFilterRepository<DB>
+        + SongQueryRepository<DB>
         + HasPool<DB>,
 {
     pub setting: SettingService<R, DB>,
     pub song: SongService<R, DB>,
+    pub song_query: SongQueryService<R, DB>,
+    pub song_filter: SongFilterService<R, DB>,
+    pub filter: FilterService<R, DB>,
     pub metadata_parser: MetadataParser,
     pub player: Mutex<Player>,
     pub pool: sqlx::Pool<DB>,
@@ -43,6 +48,7 @@ where
         + SongRepository<DB>
         + FilterRepository<DB>
         + SongFilterRepository<DB>
+        + SongQueryRepository<DB>
         + HasPool<DB>
         + Clone,
 {
@@ -56,6 +62,9 @@ where
         Self {
             setting,
             song: SongService::new(repos.clone()),
+            song_query: SongQueryService::new(repos.clone()),
+            song_filter: SongFilterService::new(repos.clone()),
+            filter: FilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Mutex::new(Player::new(Some(index), shuffle, repeat, volume)),
             pool: repos.pool().clone(),

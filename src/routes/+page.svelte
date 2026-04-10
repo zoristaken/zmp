@@ -16,19 +16,36 @@
     Settings2,
     X,
     Keyboard,
+    Tags,
+    Plus,
+    Trash2,
   } from "lucide-svelte";
 
-  type Song = {
+  type Filter = {
     id: number;
-    title: string;
-    artist: string;
-    release_year: number;
-    album: string;
-    remix: string;
-    search_blob: string;
-    file_path: string;
-    duration: number;
-    extension: string;
+    name: string;
+  };
+
+  type SongFilter = {
+    id: number;
+    song_id: number;
+    filter_id: number;
+  };
+
+  type Song = {
+    song: {
+      id: number;
+      title: string;
+      artist: string;
+      release_year: number;
+      album: string;
+      remix: string;
+      search_blob: string;
+      file_path: string;
+      duration: number;
+      extension: string;
+    };
+    filters: Filter[];
   };
 
   type TrackChangedPayload = {
@@ -106,6 +123,8 @@
   let selectedSongId: number | null = null;
   let currentSong: Song | null = null;
 
+  let allFilters: Filter[] = [];
+
   let currentSeekSeconds = 0;
   let isSeeking = false;
   let isProgrammaticSeekReset = false;
@@ -123,6 +142,19 @@
   let isSettingsOpen = false;
   let captureAction: KeybindAction | null = null;
   let keybinds: KeybindMap = { ...defaultKeybinds };
+
+  let isSongFilterMenuOpen = false;
+  let songFilterTargetSong: Song | null = null;
+  let songFilterLinksForTarget: SongFilter[] = [];
+  let isAssigningSongFilter = false;
+  let isRemovingSongFilter = false;
+  let songFilterMessage = "";
+
+  let isFilterLibraryMenuOpen = false;
+  let newFilterInput = "";
+  let isSavingGlobalFilter = false;
+  let isRemovingGlobalFilter = false;
+  let filterLibraryMessage = "";
 
   function formatDuration(durationSeconds: number): string {
     const totalSeconds = Math.max(0, Math.floor(durationSeconds));
@@ -145,7 +177,7 @@
   async function ensureSelectedSongIsVisible() {
     await tick();
 
-    const index = songs.findIndex((song) => song.id === selectedSongId);
+    const index = songs.findIndex((song) => song.song.id === selectedSongId);
     if (index < 0) return;
 
     const row = songRowElements[index];
@@ -166,13 +198,22 @@
     }
   }
 
+  async function refreshAllFilters() {
+    try {
+      allFilters = await invoke<Filter[]>("get_filters");
+    } catch (err) {
+      console.error("Failed to load filters:", err);
+      allFilters = [];
+    }
+  }
+
   function startPlaybackTicker() {
     stopPlaybackTicker();
 
     playbackInterval = setInterval(() => {
       if (!isPlaying || isSeeking || !currentSong) return;
 
-      if (currentSeekSeconds < currentSong.duration) {
+      if (currentSeekSeconds < currentSong.song.duration) {
         currentSeekSeconds += 1;
         void saveSeekProgress();
         return;
@@ -236,14 +277,14 @@
     await syncPlaybackState();
 
     if (currentSong) {
-      selectedSongId = currentSong.id;
+      selectedSongId = currentSong.song.id;
 
       const visibleSelectedIndex = songs.findIndex(
-        (song) => song.id === currentSong?.id,
+        (song) => song.song.id === currentSong?.song.id,
       );
       selectedIndex = visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
     } else if (newIndex !== null && songs[newIndex]) {
-      selectedSongId = songs[newIndex].id;
+      selectedSongId = songs[newIndex].song.id;
     } else {
       selectedSongId = null;
       selectedIndex = null;
@@ -329,7 +370,7 @@
 
       if (previousSelectedSongId !== null) {
         const visibleSelectedIndex = songs.findIndex(
-          (song) => song.id === previousSelectedSongId,
+          (song) => song.song.id === previousSelectedSongId,
         );
         nextSelectedIndex =
           visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
@@ -351,7 +392,7 @@
       selectedIndex = nextSelectedIndex;
       selectedSongId =
         nextSelectedIndex !== null && songs[nextSelectedIndex]
-          ? songs[nextSelectedIndex].id
+          ? songs[nextSelectedIndex].song.id
           : null;
 
       await ensureSelectedSongIsVisible();
@@ -680,14 +721,22 @@
       Object.entries(keybinds) as Array<[KeybindAction, string]>
     ).find(([, value]) => value && value === combo);
 
-    if (isSettingsOpen) {
+    if (isSettingsOpen || isSongFilterMenuOpen || isFilterLibraryMenuOpen) {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeSettings();
+
+        if (isSongFilterMenuOpen) {
+          closeSongFilterMenu();
+        } else if (isFilterLibraryMenuOpen) {
+          closeFilterLibraryMenu();
+        } else {
+          closeSettings();
+        }
+
         return;
       }
 
-      if (matchedEntry?.[0] === "toggleSettings") {
+      if (matchedEntry?.[0] === "toggleSettings" && isSettingsOpen) {
         event.preventDefault();
         event.stopPropagation();
         toggleSettings();
@@ -713,6 +762,298 @@
     event.stopPropagation();
 
     await runKeybindAction(matchedEntry[0]);
+  }
+
+  async function openSongFilterMenu(song: Song) {
+    songFilterTargetSong = song;
+    songFilterMessage = "";
+    songFilterLinksForTarget = [];
+    isSongFilterMenuOpen = true;
+
+    try {
+      songFilterLinksForTarget = await invoke<SongFilter[]>(
+        "get_filters_for_song",
+        {
+          songId: song.song.id,
+        },
+      );
+    } catch (err) {
+      console.error("Failed to load song filters:", err);
+      songFilterMessage = "Failed to load filters for this song.";
+    }
+  }
+
+  function closeSongFilterMenu() {
+    isSongFilterMenuOpen = false;
+    songFilterTargetSong = null;
+    songFilterLinksForTarget = [];
+    songFilterMessage = "";
+    isAssigningSongFilter = false;
+    isRemovingSongFilter = false;
+  }
+
+  function openFilterLibraryMenu() {
+    newFilterInput = "";
+    filterLibraryMessage = "";
+    isFilterLibraryMenuOpen = true;
+  }
+
+  function closeFilterLibraryMenu() {
+    isFilterLibraryMenuOpen = false;
+    newFilterInput = "";
+    filterLibraryMessage = "";
+    isSavingGlobalFilter = false;
+    isRemovingGlobalFilter = false;
+  }
+
+  function mapSongFiltersToFilters(songFilters: SongFilter[]): Filter[] {
+    return songFilters
+      .map((songFilter) =>
+        allFilters.find((filter) => filter.id === songFilter.filter_id),
+      )
+      .filter((filter): filter is Filter => Boolean(filter));
+  }
+
+  function setSongFilterLinksForTarget(songFilters: SongFilter[]) {
+    songFilterLinksForTarget = songFilters;
+  }
+
+  function updateSongFiltersLocally(songId: number, filters: Filter[]) {
+    songs = songs.map((entry) =>
+      entry.song.id === songId ? { ...entry, filters } : entry,
+    );
+
+    if (currentSong?.song.id === songId) {
+      currentSong = {
+        ...currentSong,
+        filters,
+      };
+    }
+
+    if (songFilterTargetSong?.song.id === songId) {
+      songFilterTargetSong = {
+        ...songFilterTargetSong,
+        filters,
+      };
+    }
+  }
+
+  function removeFilterFromAllSongsLocally(filterId: number) {
+    songs = songs.map((entry) => ({
+      ...entry,
+      filters: entry.filters.filter((filter) => filter.id !== filterId),
+    }));
+
+    if (currentSong) {
+      currentSong = {
+        ...currentSong,
+        filters: currentSong.filters.filter((filter) => filter.id !== filterId),
+      };
+    }
+
+    if (songFilterTargetSong) {
+      songFilterTargetSong = {
+        ...songFilterTargetSong,
+        filters: songFilterTargetSong.filters.filter(
+          (filter) => filter.id !== filterId,
+        ),
+      };
+    }
+
+    songFilterLinksForTarget = songFilterLinksForTarget.filter(
+      (link) => link.filter_id !== filterId,
+    );
+  }
+
+  async function assignExistingFilterToSong(filter: Filter) {
+    if (!songFilterTargetSong || isAssigningSongFilter) return;
+
+    const alreadyAssigned = songFilterTargetSong.filters.some(
+      (existing) => existing.id === filter.id,
+    );
+
+    if (alreadyAssigned) {
+      songFilterMessage = `"${filter.name}" is already on this song.`;
+      return;
+    }
+
+    isAssigningSongFilter = true;
+    songFilterMessage = "";
+
+    try {
+      const savedOk = await invoke<boolean>("add_filter_to_song", {
+        songId: songFilterTargetSong.song.id,
+        filterId: filter.id,
+      });
+
+      if (!savedOk) {
+        throw new Error("Backend reported add_filter_to_song = false");
+      }
+
+      const savedSongFilters = await invoke<SongFilter[]>(
+        "get_filters_for_song",
+        {
+          songId: songFilterTargetSong.song.id,
+        },
+      );
+
+      const wasSaved = savedSongFilters.some(
+        (saved) => saved.filter_id === filter.id,
+      );
+
+      if (!wasSaved) {
+        throw new Error("Assigned filter was not returned after saving.");
+      }
+
+      setSongFilterLinksForTarget(savedSongFilters);
+
+      const savedFilters = mapSongFiltersToFilters(savedSongFilters);
+      updateSongFiltersLocally(songFilterTargetSong.song.id, savedFilters);
+      songFilterMessage = `Added "${filter.name}".`;
+    } catch (err) {
+      console.error("Failed to assign filter to song:", err);
+      songFilterMessage = "Failed to add filter to song.";
+    } finally {
+      isAssigningSongFilter = false;
+    }
+  }
+
+  async function removeFilterFromSong(filter: Filter) {
+    if (!songFilterTargetSong || isRemovingSongFilter) return;
+
+    const songFilterLink = songFilterLinksForTarget.find(
+      (link) => link.filter_id === filter.id,
+    );
+
+    if (!songFilterLink) {
+      songFilterMessage = `Could not find the link for "${filter.name}".`;
+      return;
+    }
+
+    isRemovingSongFilter = true;
+    songFilterMessage = "";
+
+    try {
+      const removedOk = await invoke<boolean>("remove_filter_from_song", {
+        songFilterId: songFilterLink.id,
+      });
+
+      if (!removedOk) {
+        throw new Error("Backend reported remove_filter_from_song = false");
+      }
+
+      const savedSongFilters = await invoke<SongFilter[]>(
+        "get_filters_for_song",
+        {
+          songId: songFilterTargetSong.song.id,
+        },
+      );
+
+      const stillExists = savedSongFilters.some(
+        (link) => link.id === songFilterLink.id,
+      );
+
+      if (stillExists) {
+        throw new Error("Removed filter link still exists after delete.");
+      }
+
+      setSongFilterLinksForTarget(savedSongFilters);
+
+      const savedFilters = mapSongFiltersToFilters(savedSongFilters);
+      updateSongFiltersLocally(songFilterTargetSong.song.id, savedFilters);
+
+      songFilterMessage = `Removed "${filter.name}".`;
+    } catch (err) {
+      console.error("Failed to remove filter from song:", err);
+      songFilterMessage = "Failed to remove filter from song.";
+    } finally {
+      isRemovingSongFilter = false;
+    }
+  }
+
+  async function createOrUpdateFilter() {
+    const trimmed = newFilterInput.trim();
+    if (!trimmed || isSavingGlobalFilter) return;
+
+    isSavingGlobalFilter = true;
+    filterLibraryMessage = "";
+
+    try {
+      const savedOk = await invoke<boolean>("create_update_filter", {
+        filterName: trimmed,
+      });
+
+      if (!savedOk) {
+        throw new Error("Backend reported create_update_filter = false");
+      }
+
+      const savedFilters = await invoke<Filter[]>("get_filters");
+      allFilters = savedFilters;
+
+      const wasSaved = savedFilters.some(
+        (filter) => filter.name.toLowerCase() === trimmed.toLowerCase(),
+      );
+
+      if (!wasSaved) {
+        throw new Error("Created filter was not returned after saving.");
+      }
+
+      filterLibraryMessage = `Saved "${trimmed}".`;
+      newFilterInput = "";
+    } catch (err) {
+      console.log(err);
+      console.error("Failed to create filter:", err);
+      filterLibraryMessage = "Failed to save filter.";
+    } finally {
+      isSavingGlobalFilter = false;
+    }
+  }
+
+  async function removeGlobalFilter(filter: Filter) {
+    if (isRemovingGlobalFilter) return;
+
+    isRemovingGlobalFilter = true;
+    filterLibraryMessage = "";
+
+    try {
+      const removedOk = await invoke<boolean>("remove_filter", {
+        filterId: filter.id,
+      });
+
+      if (!removedOk) {
+        throw new Error("Backend reported remove_filter = false");
+      }
+
+      const savedFilters = await invoke<Filter[]>("get_filters");
+      const stillExists = savedFilters.some((saved) => saved.id === filter.id);
+
+      if (stillExists) {
+        throw new Error("Removed filter still exists after delete.");
+      }
+
+      allFilters = savedFilters;
+      removeFilterFromAllSongsLocally(filter.id);
+      filterLibraryMessage = `Removed "${filter.name}".`;
+    } catch (err) {
+      console.error("Failed to remove filter:", err);
+      filterLibraryMessage = "Failed to remove filter.";
+    } finally {
+      isRemovingGlobalFilter = false;
+    }
+  }
+
+  async function handleCreateFilterKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      await createOrUpdateFilter();
+    }
+  }
+
+  function availableFiltersForSong(song: Song | null): Filter[] {
+    if (!song) return [];
+
+    const usedIds = new Set(song.filters.map((filter) => filter.id));
+    return allFilters.filter((filter) => !usedIds.has(filter.id));
   }
 
   $: if (hasInitialized && searchQuery !== lastSearchedQuery) {
@@ -762,6 +1103,7 @@
         isPlaying = savedIsPlaying;
 
         await refreshLoadedSongs();
+        await refreshAllFilters();
         await refreshCurrentSong();
         await refreshSavedSeek();
         await handleTrackChange(initialIndex);
@@ -785,7 +1127,12 @@
 </script>
 
 <div class="app-shell">
-  <div class="app-content" class:app-disabled={isSettingsOpen}>
+  <div
+    class="app-content"
+    class:app-disabled={isSettingsOpen ||
+      isSongFilterMenuOpen ||
+      isFilterLibraryMenuOpen}
+  >
     <div class="main-panel">
       <div class="search-row">
         <div class="search-toolbar">
@@ -796,6 +1143,15 @@
             aria-label="Open keybind settings"
           >
             <Settings2 size={18} />
+          </button>
+
+          <button
+            class="settings-button"
+            on:click={openFilterLibraryMenu}
+            title="Manage filters"
+            aria-label="Manage filters"
+          >
+            <Tags size={18} />
           </button>
 
           <div class="search" data-tauri-drag-region>
@@ -829,14 +1185,14 @@
             </div>
           </div>
 
-          {#each songs as song, i (song.id)}
+          {#each songs as songEntry, i (songEntry.song.id)}
             <div
               bind:this={songRowElements[i]}
-              class:selected={selectedSongId === song.id}
+              class:selected={selectedSongId === songEntry.song.id}
               class="song-row"
               role="button"
               tabindex="0"
-              title={`Play ${song.title}`}
+              title={`Play ${songEntry.song.title}`}
               on:click={() => playSelectedSong(i)}
               on:keydown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -848,17 +1204,43 @@
               <div class="index">{i + 1}</div>
 
               <div class="title-cell">
-                <div class="song-title">{song.title}</div>
-                {#if song.remix}
-                  <div class="song-subtitle">{song.remix}</div>
+                <div class="song-title">{songEntry.song.title}</div>
+
+                {#if songEntry.song.remix}
+                  <div class="song-subtitle">{songEntry.song.remix}</div>
                 {/if}
+
+                <div class="row-meta-under">
+                  <button
+                    class="song-inline-filter-button"
+                    title="Add existing filter to this song"
+                    aria-label={`Add filter to ${songEntry.song.title}`}
+                    on:click|stopPropagation={() =>
+                      openSongFilterMenu(songEntry)}
+                  >
+                    <Tags size={13} />
+                    <span>Add filter</span>
+                  </button>
+
+                  {#if songEntry.filters.length > 0}
+                    <div class="song-tags inline-song-tags">
+                      {#each songEntry.filters as filter (filter.id)}
+                        <span class="song-tag">{filter.name}</span>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
               </div>
 
-              <div class="artist-cell">{song.artist}</div>
-              <div class="album-cell">{song.album}</div>
-              <div class="date-cell">{formatDate(song.release_year)}</div>
-              <div class="extension-cell">{song.extension}</div>
-              <div class="duration-cell">{formatDuration(song.duration)}</div>
+              <div class="artist-cell">{songEntry.song.artist}</div>
+              <div class="album-cell">{songEntry.song.album}</div>
+              <div class="date-cell">
+                {formatDate(songEntry.song.release_year)}
+              </div>
+              <div class="extension-cell">{songEntry.song.extension}</div>
+              <div class="duration-cell">
+                {formatDuration(songEntry.song.duration)}
+              </div>
             </div>
           {/each}
         </div>
@@ -871,14 +1253,22 @@
           {#if currentSong}
             <div class="now-playing-content">
               <div class="now-playing-header">
-                <div class="now-playing-title">{currentSong.title}</div>
+                <div class="now-playing-title">{currentSong.song.title}</div>
               </div>
 
-              <div class="now-playing-meta">{currentSong.artist}</div>
-              <div class="now-playing-album">{currentSong.album}</div>
+              <div class="now-playing-meta">{currentSong.song.artist}</div>
+              <div class="now-playing-album">{currentSong.song.album}</div>
 
-              {#if currentSong.remix}
-                <div class="now-playing-remix">{currentSong.remix}</div>
+              {#if currentSong.song.remix}
+                <div class="now-playing-remix">{currentSong.song.remix}</div>
+              {/if}
+
+              {#if currentSong.filters.length > 0}
+                <div class="now-playing-tags">
+                  {#each currentSong.filters as filter (filter.id)}
+                    <span class="song-tag now-playing-tag">{filter.name}</span>
+                  {/each}
+                </div>
               {/if}
             </div>
           {:else}
@@ -952,7 +1342,7 @@
                 class="seek-slider"
                 type="range"
                 min="0"
-                max={currentSong.duration}
+                max={currentSong.song.duration}
                 step="1"
                 bind:value={currentSeekSeconds}
                 on:input={onSeekInput}
@@ -972,7 +1362,7 @@
               />
             {/if}
             <span class="seek-time">
-              {currentSong ? formatDuration(currentSong.duration) : "0:00"}
+              {currentSong ? formatDuration(currentSong.song.duration) : "0:00"}
             </span>
           </div>
         </div>
@@ -1007,6 +1397,214 @@
       </div>
     </div>
   </div>
+
+  {#if isSongFilterMenuOpen && songFilterTargetSong}
+    <div
+      class="settings-overlay"
+      role="presentation"
+      on:click={(event) => {
+        if (event.target === event.currentTarget) {
+          closeSongFilterMenu();
+        }
+      }}
+    >
+      <div
+        class="settings-modal filter-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="song-filter-title"
+      >
+        <div class="settings-header">
+          <div class="settings-title-wrap">
+            <div class="settings-icon">
+              <Tags size={18} />
+            </div>
+            <div>
+              <h2 id="song-filter-title">Add existing filter to song</h2>
+              <p>Select one of the saved filters and attach it to this song.</p>
+            </div>
+          </div>
+
+          <button
+            class="settings-close"
+            on:click={closeSongFilterMenu}
+            title="Close"
+            aria-label="Close song filter menu"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div class="filter-song-summary">
+          <div class="filter-song-title">{songFilterTargetSong.song.title}</div>
+          <div class="filter-song-meta">
+            {songFilterTargetSong.song.artist}
+            {#if songFilterTargetSong.song.album}
+              · {songFilterTargetSong.song.album}
+            {/if}
+          </div>
+        </div>
+
+        {#if songFilterMessage}
+          <div class="filter-save-message">{songFilterMessage}</div>
+        {/if}
+
+        <div class="filter-existing">
+          <div class="filter-existing-label">Current filters</div>
+
+          {#if songFilterTargetSong.filters.length > 0}
+            <div class="current-filter-list">
+              {#each songFilterTargetSong.filters as filter (filter.id)}
+                <div class="current-filter-item">
+                  <span class="song-tag">{filter.name}</span>
+                  <button
+                    class="current-filter-remove"
+                    on:click={() => removeFilterFromSong(filter)}
+                    disabled={isRemovingSongFilter}
+                    title={`Remove ${filter.name}`}
+                    aria-label={`Remove ${filter.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="filter-empty">No filters on this song yet.</div>
+          {/if}
+        </div>
+
+        <div class="filter-existing">
+          <div class="filter-existing-label">Available filters</div>
+
+          {#if availableFiltersForSong(songFilterTargetSong).length > 0}
+            <div class="available-filter-list">
+              {#each availableFiltersForSong(songFilterTargetSong) as filter (filter.id)}
+                <button
+                  class="available-filter-button"
+                  on:click={() => assignExistingFilterToSong(filter)}
+                  disabled={isAssigningSongFilter}
+                >
+                  <span>{filter.name}</span>
+                  <Plus size={14} />
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="filter-empty">
+              No available filters. Create one in the filter library first.
+            </div>
+          {/if}
+        </div>
+
+        <div class="settings-footer">
+          <button
+            class="footer-button secondary-button"
+            on:click={closeSongFilterMenu}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if isFilterLibraryMenuOpen}
+    <div
+      class="settings-overlay"
+      role="presentation"
+      on:click={(event) => {
+        if (event.target === event.currentTarget) {
+          closeFilterLibraryMenu();
+        }
+      }}
+    >
+      <div
+        class="settings-modal filter-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="filter-library-title"
+      >
+        <div class="settings-header">
+          <div class="settings-title-wrap">
+            <div class="settings-icon">
+              <Tags size={18} />
+            </div>
+            <div>
+              <h2 id="filter-library-title">Filter library</h2>
+              <p>Create filters that can later be attached to songs.</p>
+            </div>
+          </div>
+
+          <button
+            class="settings-close"
+            on:click={closeFilterLibraryMenu}
+            title="Close"
+            aria-label="Close filter library"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div class="filter-form">
+          <div class="filter-input-row">
+            <input
+              type="text"
+              bind:value={newFilterInput}
+              placeholder="Type a filter name..."
+              on:keydown={handleCreateFilterKeydown}
+            />
+            <button
+              class="footer-button"
+              on:click={createOrUpdateFilter}
+              disabled={isSavingGlobalFilter}
+            >
+              <Plus size={16} />
+              <span>{isSavingGlobalFilter ? "Saving..." : "Save filter"}</span>
+            </button>
+          </div>
+
+          {#if filterLibraryMessage}
+            <div class="filter-save-message">{filterLibraryMessage}</div>
+          {/if}
+
+          <div class="filter-existing">
+            <div class="filter-existing-label">Saved filters</div>
+
+            {#if allFilters.length > 0}
+              <div class="global-filter-list">
+                {#each allFilters as filter (filter.id)}
+                  <div class="current-filter-item">
+                    <span class="song-tag">{filter.name}</span>
+                    <button
+                      class="current-filter-remove danger-remove"
+                      on:click={() => removeGlobalFilter(filter)}
+                      disabled={isRemovingGlobalFilter}
+                      title={`Delete ${filter.name}`}
+                      aria-label={`Delete ${filter.name}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="filter-empty">No filters created yet.</div>
+            {/if}
+          </div>
+        </div>
+
+        <div class="settings-footer">
+          <button
+            class="footer-button secondary-button"
+            on:click={closeFilterLibraryMenu}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if isSettingsOpen}
     <div
@@ -1159,7 +1757,7 @@
   .search-toolbar {
     width: 100%;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto auto minmax(0, 1fr);
     gap: 0.75rem;
     align-items: center;
   }
@@ -1360,6 +1958,67 @@
     text-overflow: ellipsis;
   }
 
+  .row-meta-under {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.55rem;
+    margin-top: 0.45rem;
+  }
+
+  .song-inline-filter-button {
+    border: 1px solid #323232;
+    border-radius: 999px;
+    background: #1d1d1d;
+    color: #d7d7d7;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .song-inline-filter-button:hover {
+    background: #262626;
+    border-color: #474747;
+    color: #ffffff;
+  }
+
+  .song-inline-filter-button:active {
+    transform: scale(0.98);
+  }
+
+  .song-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .inline-song-tags {
+    margin-top: 0;
+  }
+
+  .song-tag {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: #262626;
+    border: 1px solid #343434;
+    color: #d8d8d8;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
   .bottom-bar {
     width: 100%;
     min-height: 130px;
@@ -1429,6 +2088,19 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .now-playing-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.2rem;
+  }
+
+  .now-playing-tag {
+    background: #1f2a21;
+    border-color: #2b4430;
+    color: #dff7e8;
   }
 
   .center-player {
@@ -1588,6 +2260,10 @@
     box-sizing: border-box;
   }
 
+  .filter-modal {
+    width: min(620px, 100%);
+  }
+
   .settings-header {
     display: flex;
     align-items: flex-start;
@@ -1738,6 +2414,173 @@
     flex-wrap: wrap;
   }
 
+  .filter-song-summary {
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    background: #1d1d1d;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+  }
+
+  .filter-song-title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .filter-song-meta {
+    color: #b3b3b3;
+    font-size: 0.92rem;
+  }
+
+  .filter-form {
+    display: grid;
+    gap: 1rem;
+    min-height: 0;
+  }
+
+  .filter-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .filter-input-row input {
+    width: 100%;
+    min-width: 0;
+    padding: 0.85rem 1rem;
+    border: 1px solid #444;
+    border-radius: 999px;
+    font-size: 1rem;
+    outline: none;
+    background: #1f1f1f;
+    color: white;
+    box-sizing: border-box;
+  }
+
+  .filter-input-row input:focus {
+    border-color: #5a5a5a;
+  }
+
+  .filter-input-row .footer-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .filter-input-row .footer-button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .filter-save-message {
+    color: #d6d6d6;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .filter-existing {
+    background: #1d1d1d;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+  }
+
+  .filter-existing-label {
+    font-weight: 600;
+    margin-bottom: 0.7rem;
+  }
+
+  .filter-empty {
+    color: #b3b3b3;
+    font-size: 0.92rem;
+  }
+
+  .available-filter-list,
+  .global-filter-list,
+  .current-filter-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .available-filter-button {
+    border: 1px solid #323232;
+    border-radius: 999px;
+    background: #1b1b1b;
+    color: #f2f2f2;
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 600;
+    padding: 0.45rem 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .available-filter-button:hover {
+    background: #242424;
+    border-color: #454545;
+  }
+
+  .available-filter-button:active {
+    transform: scale(0.98);
+  }
+
+  .available-filter-button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .current-filter-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .current-filter-remove {
+    width: 24px;
+    height: 24px;
+    border: 1px solid #3a3a3a;
+    border-radius: 999px;
+    background: #202020;
+    color: #d9d9d9;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .current-filter-remove:hover {
+    background: #2a2a2a;
+    border-color: #505050;
+    color: #ffffff;
+  }
+
+  .current-filter-remove:active {
+    transform: scale(0.97);
+  }
+
+  .current-filter-remove:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .danger-remove:hover {
+    background: #3a1f1f;
+    border-color: #7a3636;
+    color: #ffdede;
+  }
+
   @media (max-width: 1180px) {
     .center-player {
       width: min(46vw, 660px);
@@ -1883,6 +2726,10 @@
 
     .footer-button {
       width: 100%;
+    }
+
+    .filter-input-row {
+      grid-template-columns: 1fr;
     }
   }
 </style>

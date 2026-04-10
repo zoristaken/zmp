@@ -4,12 +4,12 @@ use anyhow::Context;
 use rand::RngExt;
 use rodio::Decoder;
 
-use crate::song::Song;
+use crate::song_query::SongWithFilters;
 
 pub struct Player {
     _stream_handle: rodio::MixerDeviceSink,
     player: rodio::Player,
-    queue: Vec<Song>,
+    queue: Vec<SongWithFilters>,
     current_index: Option<usize>,
     repeat: bool,
     shuffle: bool,
@@ -43,6 +43,31 @@ impl Player {
         }
     }
 
+    pub fn load_saved_state(
+        &mut self,
+        is_shuffle: bool,
+        is_repeat: bool,
+        saved_index: usize,
+        saved_seek: usize,
+        saved_play_pause_flag: bool,
+        songs: Vec<SongWithFilters>,
+    ) -> anyhow::Result<Option<usize>> {
+        self.set_shuffle(is_shuffle);
+        self.set_repeat(is_repeat);
+        self.set_queue(songs.clone())?;
+
+        if !songs.is_empty() {
+            let index = saved_index.min(songs.len() - 1);
+            self.play_song_at(index, saved_play_pause_flag, false)?;
+
+            if saved_seek > 0 {
+                self.seek_to_seconds(saved_seek as u64)?;
+            }
+        }
+
+        Ok(self.current_index())
+    }
+
     pub fn seek_to_seconds(&mut self, seconds: u64) -> anyhow::Result<()> {
         let target = Duration::from_secs(seconds);
 
@@ -53,15 +78,15 @@ impl Player {
         Ok(())
     }
 
-    fn source_from_song(song: &Song) -> anyhow::Result<Decoder<BufReader<File>>> {
-        let file = File::open(&song.file_path)
-            .with_context(|| format!("failed to open file: {}", song.file_path))?;
+    fn source_from_song(song: &SongWithFilters) -> anyhow::Result<Decoder<BufReader<File>>> {
+        let file = File::open(&song.song.file_path)
+            .with_context(|| format!("failed to open file: {}", song.song.file_path))?;
         let source = Decoder::try_from(file)
-            .with_context(|| format!("failed to decode file: {}", song.file_path))?;
+            .with_context(|| format!("failed to decode file: {}", song.song.file_path))?;
         Ok(source)
     }
 
-    fn append_song(&self, song: &Song) -> anyhow::Result<()> {
+    fn append_song(&self, song: &SongWithFilters) -> anyhow::Result<()> {
         let source = Self::source_from_song(song)?;
         self.player.append(source);
         Ok(())
@@ -81,7 +106,7 @@ impl Player {
         Ok(())
     }
 
-    pub fn set_queue(&mut self, songs: Vec<Song>) -> anyhow::Result<()> {
+    pub fn set_queue(&mut self, songs: Vec<SongWithFilters>) -> anyhow::Result<()> {
         let current_song = self.current_index.and_then(|i| self.queue.get(i)).cloned();
 
         self.queue = songs;
@@ -191,7 +216,7 @@ impl Player {
         self.shuffle = flag;
     }
 
-    pub fn current_song(&self) -> Option<&Song> {
+    pub fn current_song(&self) -> Option<&SongWithFilters> {
         self.current_index.map(|i| &self.queue[i])
     }
 
