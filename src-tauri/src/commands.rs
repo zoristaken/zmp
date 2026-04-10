@@ -58,19 +58,8 @@ async fn refresh_loaded_song_state_in_tx(
     Ok(())
 }
 
-//TODO: temporary mock of what a setup would look like
 #[tauri::command]
-pub async fn init(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    //select music folder path
-    state
-        .zmp
-        .setting
-        .set_music_folder_path(&state.zmp.pool, "/home/z/Music")
-        .await
-        .map_err(|e| e.to_string())?;
-
-    //...?
-    //process music folder
+pub async fn process_music_folder(state: tauri::State<'_, AppState>) -> Result<(), String> {
     state
         .zmp
         .process_music_folder()
@@ -144,6 +133,59 @@ pub async fn load(
 
     emit_track_changed(&app, current_index)?;
     Ok(count)
+}
+
+#[tauri::command]
+pub async fn get_music_folder_path(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let path = state
+        .zmp
+        .setting
+        .get_music_folder_path(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn set_music_folder_path(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let result = state
+        .zmp
+        .setting
+        .set_music_folder_path(&state.zmp.pool, &path)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn has_processed_music_folder(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let path = state
+        .zmp
+        .setting
+        .has_processed_music_folder(&state.zmp.pool)
+        .await;
+
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn set_processed_music_folder(
+    state: tauri::State<'_, AppState>,
+    flag: bool,
+) -> Result<(), String> {
+    let result = state
+        .zmp
+        .setting
+        .set_processed_music_folder(&state.zmp.pool, flag)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(result)
 }
 
 #[tauri::command]

@@ -134,7 +134,7 @@ impl Player {
         ignore_if_same: bool,
     ) -> anyhow::Result<()> {
         if index >= self.queue.len() {
-            anyhow::bail!("index out of bounds");
+            return Ok(());
         }
 
         if ignore_if_same && self.current_index == Some(index) {
@@ -163,6 +163,7 @@ impl Player {
         }
 
         let len = self.queue.len();
+
         let next_index = match self.current_index {
             None => 0,
             Some(current) if self.shuffle && len > 1 => {
@@ -217,6 +218,10 @@ impl Player {
     }
 
     pub fn current_song(&self) -> Option<&SongWithFilters> {
+        if self.queue.is_empty() {
+            return None;
+        }
+
         self.current_index.map(|i| &self.queue[i])
     }
 

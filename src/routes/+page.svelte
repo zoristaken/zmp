@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { onMount, tick } from "svelte";
   import {
     Play,
@@ -15,7 +16,6 @@
     Search,
     Settings2,
     X,
-    Keyboard,
     Tags,
     Plus,
   } from "lucide-svelte";
@@ -141,6 +141,11 @@
   let isSettingsOpen = false;
   let captureAction: KeybindAction | null = null;
   let keybinds: KeybindMap = { ...defaultKeybinds };
+  let activeSettingsSection: "general" | "keybinds" = "general";
+  let musicFolderPath = "";
+  let isPickingMusicFolder = false;
+  let hasProcessedMusicFolder = false;
+  let isInitialSetupRequired = false;
 
   let isSongFilterMenuOpen = false;
   let songFilterTargetSong: Song | null = null;
@@ -154,6 +159,38 @@
   let isSavingGlobalFilter = false;
   let isRemovingGlobalFilter = false;
   let filterLibraryMessage = "";
+
+  function hasMusicFolderPath(path: string): boolean {
+    return path.trim().length > 0;
+  }
+
+  function requiresInitialSetup(): boolean {
+    return !hasMusicFolderPath(musicFolderPath) || !hasProcessedMusicFolder;
+  }
+
+  function canCloseInitialSettings(): boolean {
+    return !requiresInitialSetup();
+  }
+
+  async function refreshSetupState() {
+    try {
+      musicFolderPath = await invoke<string>("get_music_folder_path");
+    } catch (err) {
+      console.error("Failed to load music folder path:", err);
+      musicFolderPath = "";
+    }
+
+    try {
+      hasProcessedMusicFolder = await invoke<boolean>(
+        "has_processed_music_folder",
+      );
+    } catch (err) {
+      console.error("Failed to load processed music folder flag:", err);
+      hasProcessedMusicFolder = false;
+    }
+
+    isInitialSetupRequired = requiresInitialSetup();
+  }
 
   function formatDuration(durationSeconds: number): string {
     const totalSeconds = Math.max(0, Math.floor(durationSeconds));
@@ -336,8 +373,9 @@
 
   async function shuffle() {
     try {
-      await invoke("set_random");
-      isShuffle = !isShuffle;
+      const nextValue = !isShuffle;
+      await invoke("set_random", { isRandom: nextValue });
+      isShuffle = nextValue;
     } catch (err) {
       console.error("Failed to toggle shuffle:", err);
     }
@@ -345,8 +383,9 @@
 
   async function repeat() {
     try {
-      await invoke("set_repeat");
-      isRepeat = !isRepeat;
+      const nextValue = !isRepeat;
+      await invoke("set_repeat", { isRepeat: nextValue });
+      isRepeat = nextValue;
     } catch (err) {
       console.error("Failed to toggle repeat:", err);
     }
@@ -580,9 +619,15 @@
   function openSettings() {
     isSettingsOpen = true;
     captureAction = null;
+    activeSettingsSection = "general";
   }
 
   function closeSettings() {
+    if (!canCloseInitialSettings()) {
+      activeSettingsSection = "general";
+      return;
+    }
+
     isSettingsOpen = false;
     captureAction = null;
   }
@@ -693,6 +738,72 @@
     }
   }
 
+  async function pickMusicFolder() {
+    if (isPickingMusicFolder) return;
+
+    isPickingMusicFolder = true;
+
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select music folder",
+        defaultPath: musicFolderPath || undefined,
+      });
+
+      const folderPath = Array.isArray(selected) ? selected[0] : selected;
+
+      if (!folderPath || typeof folderPath !== "string") {
+        return;
+      }
+
+      const pathChanged = folderPath !== musicFolderPath;
+
+      await invoke("set_music_folder_path", { path: folderPath });
+      musicFolderPath = folderPath;
+
+      if (pathChanged) {
+        await invoke("set_processed_music_folder", { flag: false });
+        hasProcessedMusicFolder = false;
+      }
+
+      await invoke("process_music_folder");
+      await refreshSetupState();
+
+      const count = await invoke<number>("load");
+      searchResultCount = count;
+
+      const savedVolume = await invoke<number>("get_volume");
+      const savedShuffle = await invoke<boolean>("get_random");
+      const savedRepeat = await invoke<boolean>("get_repeat");
+      const savedIsPlaying = await invoke<boolean>("get_play_pause");
+
+      volume = Math.round(savedVolume * 100);
+      previousVolume = volume > 0 ? volume : 50;
+      isMuted = volume === 0;
+      isShuffle = savedShuffle;
+      isRepeat = savedRepeat;
+      isPlaying = savedIsPlaying;
+
+      await refreshLoadedSongs();
+      await refreshAllFilters();
+      await refreshCurrentSong();
+      await refreshSavedSeek();
+      await syncPlaybackState();
+
+      if (canCloseInitialSettings()) {
+        closeSettings();
+      } else {
+        isSettingsOpen = true;
+        activeSettingsSection = "general";
+      }
+    } catch (err) {
+      console.error("Failed to pick music folder:", err);
+    } finally {
+      isPickingMusicFolder = false;
+    }
+  }
+
   async function handleGlobalKeydown(event: KeyboardEvent) {
     if (captureAction) {
       event.preventDefault();
@@ -735,7 +846,11 @@
         return;
       }
 
-      if (matchedEntry?.[0] === "toggleSettings" && isSettingsOpen) {
+      if (
+        matchedEntry?.[0] === "toggleSettings" &&
+        isSettingsOpen &&
+        canCloseInitialSettings()
+      ) {
         event.preventDefault();
         event.stopPropagation();
         toggleSettings();
@@ -876,8 +991,10 @@
     songFilterMessage = "";
 
     try {
+      const targetSongId = songFilterTargetSong.song.id;
+
       const savedOk = await invoke<boolean>("add_filter_to_song", {
-        songId: songFilterTargetSong.song.id,
+        songId: targetSongId,
         filterId: filter.id,
       });
 
@@ -888,7 +1005,7 @@
       const savedSongFilters = await invoke<SongFilter[]>(
         "get_filters_for_song",
         {
-          songId: songFilterTargetSong.song.id,
+          songId: targetSongId,
         },
       );
 
@@ -903,7 +1020,7 @@
       setSongFilterLinksForTarget(savedSongFilters);
 
       const savedFilters = mapSongFiltersToFilters(savedSongFilters);
-      updateSongFiltersLocally(songFilterTargetSong.song.id, savedFilters);
+      updateSongFiltersLocally(targetSongId, savedFilters);
       songFilterMessage = `Added "${filter.name}".`;
     } catch (err) {
       console.error("Failed to assign filter to song:", err);
@@ -929,6 +1046,8 @@
     songFilterMessage = "";
 
     try {
+      const targetSongId = songFilterTargetSong.song.id;
+
       const removedOk = await invoke<boolean>("remove_filter_from_song", {
         songFilterId: songFilterLink.id,
       });
@@ -940,7 +1059,7 @@
       const savedSongFilters = await invoke<SongFilter[]>(
         "get_filters_for_song",
         {
-          songId: songFilterTargetSong.song.id,
+          songId: targetSongId,
         },
       );
 
@@ -955,7 +1074,7 @@
       setSongFilterLinksForTarget(savedSongFilters);
 
       const savedFilters = mapSongFiltersToFilters(savedSongFilters);
-      updateSongFiltersLocally(songFilterTargetSong.song.id, savedFilters);
+      updateSongFiltersLocally(targetSongId, savedFilters);
 
       songFilterMessage = `Removed "${filter.name}".`;
     } catch (err) {
@@ -996,7 +1115,6 @@
       filterLibraryMessage = `Saved "${trimmed}".`;
       newFilterInput = "";
     } catch (err) {
-      console.log(err);
       console.error("Failed to create filter:", err);
       filterLibraryMessage = "Failed to save filter.";
     } finally {
@@ -1067,7 +1185,6 @@
     void (async () => {
       try {
         await loadKeybinds();
-        await invoke<number>("init");
 
         unlisten = await listen<TrackChangedPayload>(
           "track-changed",
@@ -1078,10 +1195,22 @@
 
         const savedSearch = await invoke<string>("get_saved_search_blob");
         searchQuery = savedSearch;
+        lastSearchedQuery = searchQuery;
+
+        await refreshSetupState();
+
+        if (requiresInitialSetup()) {
+          isSettingsOpen = true;
+          activeSettingsSection = "general";
+          songs = [];
+          currentSong = null;
+          searchResultCount = 0;
+          hasInitialized = true;
+          return;
+        }
 
         const count = await invoke<number>("load");
         searchResultCount = count;
-        lastSearchedQuery = searchQuery;
 
         const savedVolume = await invoke<number>("get_volume");
         const savedShuffle = await invoke<boolean>("get_random");
@@ -1134,8 +1263,8 @@
           <button
             class="settings-button"
             on:click={openSettings}
-            title="Keybind settings"
-            aria-label="Open keybind settings"
+            title="Settings"
+            aria-label="Open settings"
           >
             <Settings2 size={18} />
           </button>
@@ -1631,7 +1760,7 @@
       class="settings-overlay"
       role="presentation"
       on:click={(event) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && canCloseInitialSettings()) {
           closeSettings();
         }
       }}
@@ -1640,16 +1769,16 @@
         class="settings-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="keybind-settings-title"
+        aria-labelledby="settings-title"
       >
         <div class="settings-header">
           <div class="settings-title-wrap">
             <div class="settings-icon">
-              <Keyboard size={18} />
+              <Settings2 size={18} />
             </div>
             <div>
-              <h2 id="keybind-settings-title">Keybind settings</h2>
-              <p>Choose shortcuts for player controls and search focus.</p>
+              <h2 id="settings-title">Settings</h2>
+              <p>General app settings and keyboard shortcuts.</p>
             </div>
           </div>
 
@@ -1658,55 +1787,113 @@
             on:click={closeSettings}
             title="Close"
             aria-label="Close settings"
+            disabled={!canCloseInitialSettings()}
           >
             <X size={18} />
           </button>
         </div>
 
-        <div class="settings-list">
-          {#each Object.keys(keybindLabels) as actionKey}
-            <div class="keybind-row">
-              <div class="keybind-info">
-                <div class="keybind-name">
-                  {keybindLabels[actionKey as KeybindAction]}
-                </div>
-                <div class="keybind-help">
-                  {#if captureAction === actionKey}
-                    Press a key combination now. Press Escape to cancel.
-                  {:else}
-                    {keybinds[actionKey as KeybindAction] || "No shortcut set"}
-                  {/if}
-                </div>
+        <div class="settings-sections">
+          <button
+            class:active={activeSettingsSection === "general"}
+            class="settings-section-button"
+            on:click={() => (activeSettingsSection = "general")}
+          >
+            General
+          </button>
+
+          <button
+            class:active={activeSettingsSection === "keybinds"}
+            class="settings-section-button"
+            on:click={() => {
+              if (canCloseInitialSettings()) {
+                activeSettingsSection = "keybinds";
+              }
+            }}
+            disabled={!canCloseInitialSettings()}
+          >
+            Keybinds
+          </button>
+        </div>
+
+        {#if activeSettingsSection === "general"}
+          <div class="settings-list">
+            <div class="settings-card">
+              <div class="settings-card-title">Music folder</div>
+              <div class="settings-card-text">
+                {musicFolderPath || "No folder selected yet."}
               </div>
 
-              <div class="keybind-actions">
+              <div class="settings-card-actions">
                 <button
-                  class:capturing={captureAction === actionKey}
-                  class="keybind-button"
-                  on:click={() => startKeyCapture(actionKey as KeybindAction)}
+                  class="footer-button"
+                  on:click={pickMusicFolder}
+                  disabled={isPickingMusicFolder}
+                  type="button"
                 >
-                  {captureAction === actionKey ? "Listening..." : "Set"}
-                </button>
-
-                <button
-                  class="keybind-button secondary-button"
-                  on:click={() => clearKeybind(actionKey as KeybindAction)}
-                >
-                  Clear
+                  {isPickingMusicFolder ? "Choosing..." : "Choose folder"}
                 </button>
               </div>
             </div>
-          {/each}
-        </div>
+          </div>
+        {:else if activeSettingsSection === "keybinds"}
+          <div class="settings-list">
+            {#each Object.keys(keybindLabels) as actionKey}
+              <div class="keybind-row">
+                <div class="keybind-info">
+                  <div class="keybind-name">
+                    {keybindLabels[actionKey as KeybindAction]}
+                  </div>
+                  <div class="keybind-help">
+                    {#if captureAction === actionKey}
+                      Press a key combination now. Press Escape to cancel.
+                    {:else}
+                      {keybinds[actionKey as KeybindAction] ||
+                        "No shortcut set"}
+                    {/if}
+                  </div>
+                </div>
+
+                <div class="keybind-actions">
+                  <button
+                    class:capturing={captureAction === actionKey}
+                    class="keybind-button"
+                    on:click={() => startKeyCapture(actionKey as KeybindAction)}
+                  >
+                    {captureAction === actionKey ? "Listening..." : "Set"}
+                  </button>
+
+                  <button
+                    class="keybind-button secondary-button"
+                    on:click={() => clearKeybind(actionKey as KeybindAction)}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
 
         <div class="settings-footer">
+          {#if activeSettingsSection === "keybinds"}
+            <button
+              class="footer-button secondary-button"
+              on:click={resetKeybinds}
+            >
+              Reset defaults
+            </button>
+          {:else}
+            <div></div>
+          {/if}
+
           <button
-            class="footer-button secondary-button"
-            on:click={resetKeybinds}
+            class="footer-button"
+            on:click={closeSettings}
+            disabled={!canCloseInitialSettings()}
           >
-            Reset defaults
+            Done
           </button>
-          <button class="footer-button" on:click={closeSettings}>Done</button>
         </div>
       </div>
     </div>
@@ -1807,6 +1994,15 @@
 
   .settings-button:active {
     transform: scale(0.98);
+  }
+
+  .settings-button:disabled,
+  .settings-close:disabled,
+  .settings-section-button:disabled,
+  .footer-button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
   }
 
   .search {
@@ -2266,7 +2462,8 @@
     inset: 0;
     overflow: hidden;
     display: grid;
-    place-items: center;
+    justify-items: center;
+    align-items: start;
     padding: 1rem;
     box-sizing: border-box;
     background: rgba(0, 0, 0, 0.55);
@@ -2277,6 +2474,7 @@
     width: min(720px, 100%);
     max-width: 100%;
     max-height: calc(100vh - 2rem);
+    margin-top: 0;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
@@ -2296,6 +2494,7 @@
 
   .filter-modal-content {
     min-height: 0;
+    height: 100%;
     overflow: hidden;
   }
 
@@ -2303,8 +2502,8 @@
   .library-filter-layout {
     display: grid;
     gap: 1rem;
-    height: 100%;
     min-height: 0;
+    height: 100%;
   }
 
   .song-filter-layout {
@@ -2372,12 +2571,71 @@
     border-color: #484848;
   }
 
+  .settings-sections {
+    display: flex;
+    gap: 0.55rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .settings-section-button {
+    border: 1px solid #323232;
+    border-radius: 999px;
+    background: #1b1b1b;
+    color: #d3d3d3;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.6rem 0.95rem;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .settings-section-button:hover {
+    background: #242424;
+    border-color: #454545;
+    color: #ffffff;
+  }
+
+  .settings-section-button.active {
+    background: #1f3a2a;
+    border-color: #2c6b45;
+    color: #dff7e8;
+  }
+
   .settings-list {
     min-height: 0;
     overflow: auto;
     display: grid;
     gap: 0.75rem;
     padding-right: 0.1rem;
+  }
+
+  .settings-card {
+    background: #1d1d1d;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 1rem;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .settings-card-title {
+    font-weight: 600;
+  }
+
+  .settings-card-text {
+    color: #b3b3b3;
+    word-break: break-word;
+  }
+
+  .settings-card-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
   }
 
   .keybind-row {
@@ -2563,12 +2821,17 @@
 
   .fill-list-panel {
     height: 100%;
+    min-height: 0;
     max-height: none;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 
   .fixed-three-list {
     height: 145px;
     max-height: 145px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 
   .empty-list-panel {
@@ -2591,7 +2854,7 @@
   .stacked-filter-row {
     min-height: 48px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 28px;
+    grid-template-columns: minmax(0, 1fr) 32px;
     align-items: center;
     gap: 0.75rem;
     padding: 0.65rem 0.85rem;
@@ -2672,10 +2935,12 @@
     background: #202020;
     color: #d9d9d9;
     cursor: pointer;
-    display: grid;
-    place-items: center;
-    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: end;
     padding: 0;
+    margin-left: 0.35rem;
     margin-right: 0.25rem;
     transition:
       background 0.18s ease,

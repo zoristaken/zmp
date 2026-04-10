@@ -24,10 +24,15 @@ pub mod sqlite;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            commands::init,
+            commands::process_music_folder,
             commands::load,
             commands::search_songs,
+            commands::get_music_folder_path,
+            commands::set_music_folder_path,
+            commands::has_processed_music_folder,
+            commands::set_processed_music_folder,
             commands::get_current_index,
             commands::get_current_song,
             commands::get_saved_search_blob,
