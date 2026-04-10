@@ -1,6 +1,6 @@
 pub mod common;
 use crate::common::setup_db;
-use zmp_lib::setting::SettingService;
+use zmp_lib::setting::{SettingService, DEFAULT_SONG_LIST_LIMIT};
 use zmp_lib::sqlite::SqliteDb;
 
 #[tokio::test]
@@ -117,6 +117,33 @@ async fn integration_saved_search_blob_roundtrip() {
 
     let actual = service.get_saved_search_blob(&service.pool).await.unwrap();
     assert_eq!(actual, "genre:ambient");
+}
+
+#[tokio::test]
+async fn integration_song_list_limit_returns_default_when_missing() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = SettingService::new(sqlite);
+
+    let actual = service.get_song_list_limit(&service.pool).await;
+
+    assert_eq!(actual, DEFAULT_SONG_LIST_LIMIT);
+}
+
+#[tokio::test]
+async fn integration_song_list_limit_roundtrip() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = SettingService::new(sqlite);
+
+    service
+        .set_song_list_limit(&service.pool, 2500)
+        .await
+        .unwrap();
+
+    let actual = service.get_song_list_limit(&service.pool).await;
+
+    assert_eq!(actual, 2500);
 }
 
 #[tokio::test]

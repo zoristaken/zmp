@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 use zmp_lib::{
     filter::{Filter, FilterService},
     song::{Song, SongService},
-    song_filter::SongFilter,
+    song_filter::{SongFilter, SongFilterService},
     sqlite::SqliteDb,
 };
 
@@ -32,6 +32,80 @@ pub async fn setup_db_with_song_and_filters() -> SqlitePool {
     for filter in filters {
         let _ = filter_service.add(&filter_service.pool, &filter.name).await;
     }
+
+    pool
+}
+
+pub async fn setup_db_with_query_fixture() -> SqlitePool {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool: pool.clone() };
+    let song_service = SongService::new(sqlite.clone());
+    let filter_service = FilterService::new(sqlite.clone());
+    let song_filter_service = SongFilterService::new(sqlite);
+
+    song_service
+        .add_songs(&song_service.pool, sample_songs())
+        .await
+        .unwrap();
+
+    filter_service
+        .add(&filter_service.pool, "favorites")
+        .await
+        .unwrap();
+    filter_service
+        .add(&filter_service.pool, "ambient")
+        .await
+        .unwrap();
+
+    song_filter_service
+        .add(&song_filter_service.pool, 1, 1)
+        .await
+        .unwrap();
+    song_filter_service
+        .add(&song_filter_service.pool, 1, 2)
+        .await
+        .unwrap();
+    song_filter_service
+        .add(&song_filter_service.pool, 3, 2)
+        .await
+        .unwrap();
+
+    pool
+}
+
+pub async fn setup_db_with_single_song_and_filters() -> SqlitePool {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool: pool.clone() };
+    let song_service = SongService::new(sqlite.clone());
+    let filter_service = FilterService::new(sqlite);
+
+    song_service
+        .add_songs(
+            &song_service.pool,
+            vec![song(
+                0,
+                "Teardrop",
+                "Massive Attack",
+                1998,
+                "Mezzanine",
+                "",
+                "teardrop massive attack mezzanine 1998",
+                "/music/Teardrop.mp3",
+                180,
+                "mp3",
+            )],
+        )
+        .await
+        .unwrap();
+
+    filter_service
+        .add(&filter_service.pool, "ambient")
+        .await
+        .unwrap();
+    filter_service
+        .add(&filter_service.pool, "favorites")
+        .await
+        .unwrap();
 
     pool
 }
@@ -72,7 +146,7 @@ pub fn sample_songs() -> Vec<Song> {
             1998,
             "Mezzanine",
             "",
-            "teardrop massive attack mezzanine trip hop",
+            "teardrop massive attack mezzanine 1998",
             "/music/teardrop.mp3",
             330,
             "mp3",
@@ -84,7 +158,7 @@ pub fn sample_songs() -> Vec<Song> {
             1999,
             "Windowlicker",
             "",
-            "windowlicker aphex twin idm electronic",
+            "windowlicker aphex twin windowlicker 1999",
             "/music/windowlicker.mp4",
             360,
             "mp4",
@@ -96,7 +170,7 @@ pub fn sample_songs() -> Vec<Song> {
             1998,
             "Music Has the Right to Children",
             "",
-            "roygbiv boards of canada ambient electronic",
+            "roygbiv boards of canada music has the right to children 1998",
             "/music/roygbiv.flac",
             170,
             "flac",

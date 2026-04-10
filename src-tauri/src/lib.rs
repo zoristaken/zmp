@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use tauri::Manager;
 
 use crate::{
@@ -16,19 +14,28 @@ pub mod player;
 pub mod setting;
 pub mod song;
 pub mod song_filter;
+pub mod song_mutation;
+pub mod song_query;
 pub mod sqlite;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            commands::init,
+            commands::process_music_folder,
             commands::load,
             commands::search_songs,
+            commands::get_music_folder_path,
+            commands::set_music_folder_path,
+            commands::has_processed_music_folder,
+            commands::set_processed_music_folder,
             commands::get_current_index,
             commands::get_current_song,
             commands::get_saved_search_blob,
+            commands::get_song_list_limit,
+            commands::set_song_list_limit,
             commands::get_loaded_songs,
             commands::play_song_at,
             commands::next_song,
@@ -61,6 +68,12 @@ pub fn run() {
             commands::set_play_pause_keybind,
             commands::get_focus_search_keybind,
             commands::set_focus_search_keybind,
+            commands::create_filter,
+            commands::get_filters,
+            commands::remove_filter,
+            commands::add_filter_to_song,
+            commands::get_filters_for_song,
+            commands::remove_filter_from_song,
         ])
         .setup(|app| {
             tauri::async_runtime::block_on(async move {
@@ -68,7 +81,6 @@ pub fn run() {
                 let path = config.db_path().await.unwrap();
                 let sqlite = SqliteDb::new(&path).await.unwrap();
                 app.manage(AppState {
-                    loaded_songs: Mutex::new(Vec::new()),
                     zmp: PlayerManager::new(sqlite.clone()).await,
                 });
             });

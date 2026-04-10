@@ -1,10 +1,11 @@
 use async_trait::async_trait;
+use serde::Serialize;
 use sqlx::{Acquire, Database};
 
 use crate::manager::HasPool;
 
 #[allow(dead_code)]
-#[derive(sqlx::FromRow, Debug, Clone, PartialEq)]
+#[derive(sqlx::FromRow, Debug, Clone, PartialEq, Serialize)]
 pub struct SongFilter {
     pub id: i32,
     pub song_id: i32,
@@ -16,7 +17,7 @@ pub trait SongFilterRepository<DB>
 where
     DB: Database,
 {
-    async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
+    async fn add<'a, A>(&self, acquiree: A, song_id: i32, filter_id: i32) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send;
     async fn add_multiple<'a, A>(
@@ -50,6 +51,14 @@ where
     ) -> anyhow::Result<Vec<SongFilter>>
     where
         A: Acquire<'a, Database = DB> + Send;
+
+    async fn remove_song_filter<'a, A>(
+        &self,
+        acquiree: A,
+        song_filter_id: i32,
+    ) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send;
 }
 
 pub struct SongFilterService<R, DB>
@@ -73,11 +82,11 @@ where
         }
     }
 
-    pub async fn add<'a, A>(&self, acquiree: A, song_filter: SongFilter) -> anyhow::Result<()>
+    pub async fn add<'a, A>(&self, acquiree: A, song_id: i32, filter_id: i32) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.add(acquiree, song_filter).await
+        self.repo.add(acquiree, song_id, filter_id).await
     }
 
     pub async fn add_multiple<'a, A>(
@@ -125,5 +134,12 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.get_by_song(acquiree, song_id).await
+    }
+
+    pub async fn remove<'a, A>(&self, acquiree: A, song_filter_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.remove_song_filter(acquiree, song_filter_id).await
     }
 }

@@ -25,6 +25,10 @@ pub trait FilterRepository<DB> {
     async fn get_filter_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = DB> + Send;
+
+    async fn remove_filter<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send;
 }
 
 pub struct FilterService<R, DB>
@@ -76,5 +80,12 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.get_filter_by_id(acquiree, filter_id).await
+    }
+
+    pub async fn remove<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.remove_filter(acquiree, filter_id).await
     }
 }

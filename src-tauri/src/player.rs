@@ -4,12 +4,12 @@ use anyhow::Context;
 use rand::RngExt;
 use rodio::Decoder;
 
-use crate::song::Song;
+use crate::song_query::SongWithFilters;
 
 pub struct Player {
     _stream_handle: rodio::MixerDeviceSink,
     player: rodio::Player,
-    queue: Vec<Song>,
+    queue: Vec<SongWithFilters>,
     current_index: Option<usize>,
     repeat: bool,
     shuffle: bool,
@@ -19,6 +19,10 @@ pub struct Player {
 impl Player {
     pub fn current_index(&self) -> Option<usize> {
         self.current_index
+    }
+
+    pub fn queue(&self) -> &[SongWithFilters] {
+        &self.queue
     }
 
     pub fn new(
@@ -43,6 +47,31 @@ impl Player {
         }
     }
 
+    pub fn load_saved_state(
+        &mut self,
+        is_shuffle: bool,
+        is_repeat: bool,
+        saved_index: usize,
+        saved_seek: usize,
+        saved_play_pause_flag: bool,
+        songs: Vec<SongWithFilters>,
+    ) -> anyhow::Result<Option<usize>> {
+        self.set_shuffle(is_shuffle);
+        self.set_repeat(is_repeat);
+        self.set_queue(songs)?;
+
+        if !self.queue.is_empty() {
+            let index = saved_index.min(self.queue.len() - 1);
+            self.play_song_at(index, saved_play_pause_flag, false)?;
+
+            if saved_seek > 0 {
+                self.seek_to_seconds(saved_seek as u64)?;
+            }
+        }
+
+        Ok(self.current_index())
+    }
+
     pub fn seek_to_seconds(&mut self, seconds: u64) -> anyhow::Result<()> {
         let target = Duration::from_secs(seconds);
 
@@ -53,15 +82,15 @@ impl Player {
         Ok(())
     }
 
-    fn source_from_song(song: &Song) -> anyhow::Result<Decoder<BufReader<File>>> {
-        let file = File::open(&song.file_path)
-            .with_context(|| format!("failed to open file: {}", song.file_path))?;
+    fn source_from_song(song: &SongWithFilters) -> anyhow::Result<Decoder<BufReader<File>>> {
+        let file = File::open(&song.song.file_path)
+            .with_context(|| format!("failed to open file: {}", song.song.file_path))?;
         let source = Decoder::try_from(file)
-            .with_context(|| format!("failed to decode file: {}", song.file_path))?;
+            .with_context(|| format!("failed to decode file: {}", song.song.file_path))?;
         Ok(source)
     }
 
-    fn append_song(&self, song: &Song) -> anyhow::Result<()> {
+    fn append_song(&self, song: &SongWithFilters) -> anyhow::Result<()> {
         let source = Self::source_from_song(song)?;
         self.player.append(source);
         Ok(())
@@ -81,8 +110,11 @@ impl Player {
         Ok(())
     }
 
-    pub fn set_queue(&mut self, songs: Vec<Song>) -> anyhow::Result<()> {
-        let current_song = self.current_index.and_then(|i| self.queue.get(i)).cloned();
+    pub fn set_queue(&mut self, songs: Vec<SongWithFilters>) -> anyhow::Result<()> {
+        let current_song_id = self
+            .current_index
+            .and_then(|i| self.queue.get(i))
+            .map(|song| song.song.id);
 
         self.queue = songs;
 
@@ -95,9 +127,8 @@ impl Player {
         //set the current index to the previous song index if existed
         //this is needed because the list of songs can change, in which case
         //the current index of the previous song can be different
-        self.current_index = current_song
-            .and_then(|song| self.queue.iter().position(|s| *s == song))
-            .or(None);
+        self.current_index = current_song_id
+            .and_then(|song_id| self.queue.iter().position(|song| song.song.id == song_id));
 
         Ok(())
     }
@@ -109,7 +140,7 @@ impl Player {
         ignore_if_same: bool,
     ) -> anyhow::Result<()> {
         if index >= self.queue.len() {
-            anyhow::bail!("index out of bounds");
+            return Ok(());
         }
 
         if ignore_if_same && self.current_index == Some(index) {
@@ -138,6 +169,7 @@ impl Player {
         }
 
         let len = self.queue.len();
+
         let next_index = match self.current_index {
             None => 0,
             Some(current) if self.shuffle && len > 1 => {
@@ -191,7 +223,11 @@ impl Player {
         self.shuffle = flag;
     }
 
-    pub fn current_song(&self) -> Option<&Song> {
+    pub fn current_song(&self) -> Option<&SongWithFilters> {
+        if self.queue.is_empty() {
+            return None;
+        }
+
         self.current_index.map(|i| &self.queue[i])
     }
 

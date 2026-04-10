@@ -1,5 +1,5 @@
 pub mod common;
-use crate::common::{sample_song_filters, setup_db_with_song_and_filters, song_filter};
+use crate::common::{sample_song_filters, setup_db_with_song_and_filters};
 use zmp_lib::{song_filter::SongFilterService, sqlite::SqliteDb};
 
 #[tokio::test]
@@ -8,10 +8,7 @@ async fn integration_add_inserts_song_filter() {
     let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite.clone());
 
-    service
-        .add(&service.pool, song_filter(4, 3, 1))
-        .await
-        .unwrap();
+    service.add(&service.pool, 3, 1).await.unwrap();
 
     let items = service.get_all(&service.pool).await.unwrap();
     assert_eq!(items.len(), 1);
