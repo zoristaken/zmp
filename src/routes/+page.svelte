@@ -146,6 +146,16 @@
   let isPickingMusicFolder = false;
   let hasProcessedMusicFolder = false;
   let isInitialSetupRequired = false;
+  let hasLoadedSetupState = false;
+  let isMusicFolderConfirmOpen = false;
+  let pendingMusicFolderPath: string | null = null;
+  let songListLimit = 10000;
+  let songListLimitInput = "10000";
+  let isSavingSongListLimit = false;
+  let songListLimitMessage = "";
+  let songListLimitMessageKind: "success" | "error" | null = null;
+  let setupMessage = "";
+  let setupMessageKind: "success" | "error" | "info" | null = null;
 
   let isSongFilterMenuOpen = false;
   let songFilterTargetSong: Song | null = null;
@@ -169,7 +179,7 @@
   }
 
   function canCloseInitialSettings(): boolean {
-    return !requiresInitialSetup();
+    return !isInitialSetupRequired;
   }
 
   async function refreshSetupState() {
@@ -189,7 +199,17 @@
       hasProcessedMusicFolder = false;
     }
 
+    try {
+      songListLimit = await invoke<number>("get_song_list_limit");
+      songListLimitInput = String(songListLimit);
+    } catch (err) {
+      console.error("Failed to load song list limit:", err);
+      songListLimit = 10000;
+      songListLimitInput = "10000";
+    }
+
     isInitialSetupRequired = requiresInitialSetup();
+    hasLoadedSetupState = true;
   }
 
   function formatDuration(durationSeconds: number): string {
@@ -616,6 +636,188 @@
     }
   }
 
+  function clearSongListLimitMessage() {
+    songListLimitMessage = "";
+    songListLimitMessageKind = null;
+  }
+
+  function clearSetupMessage() {
+    setupMessage = "";
+    setupMessageKind = null;
+  }
+
+  function normalizePickedPath(path: string): string {
+    const trimmed = path.trim();
+
+    if (!trimmed.startsWith("file://")) {
+      return trimmed;
+    }
+
+    try {
+      const url = new URL(trimmed);
+      const decodedPath = decodeURIComponent(url.pathname);
+
+      if (/^\/[A-Za-z]:\//.test(decodedPath)) {
+        return decodedPath.slice(1);
+      }
+
+      return decodedPath;
+    } catch (err) {
+      console.error("Failed to normalize picked folder path:", err);
+      return trimmed;
+    }
+  }
+
+  function extractPickedPath(value: unknown): string | null {
+    if (typeof value === "string") {
+      const normalizedPath = normalizePickedPath(value);
+      return normalizedPath.length > 0 ? normalizedPath : null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const normalizedPath = extractPickedPath(entry);
+        if (normalizedPath) {
+          return normalizedPath;
+        }
+      }
+
+      return null;
+    }
+
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    for (const key of ["path", "filePath", "Path", "Url", "url"]) {
+      const normalizedPath = extractPickedPath(record[key]);
+      if (normalizedPath) {
+        return normalizedPath;
+      }
+    }
+
+    return null;
+  }
+
+  function closeMusicFolderConfirm() {
+    isMusicFolderConfirmOpen = false;
+    pendingMusicFolderPath = null;
+  }
+
+  async function applyMusicFolderSelection(folderPath: string) {
+    await invoke("set_music_folder_path", { path: folderPath });
+    await invoke("set_processed_music_folder", { flag: false });
+    musicFolderPath = folderPath;
+    hasProcessedMusicFolder = false;
+    isInitialSetupRequired = requiresInitialSetup();
+    setupMessage = "Processing selected folder...";
+    setupMessageKind = "info";
+    await tick();
+
+    await invoke("process_music_folder");
+    await refreshSetupState();
+
+    searchQuery = "";
+    lastSearchedQuery = "";
+
+    const count = await invoke<number>("load");
+    searchResultCount = count;
+
+    const savedVolume = await invoke<number>("get_volume");
+    const savedShuffle = await invoke<boolean>("get_random");
+    const savedRepeat = await invoke<boolean>("get_repeat");
+    const initialIndex = await invoke<number | null>("get_current_index");
+    const savedIsPlaying = await invoke<boolean>("get_play_pause");
+
+    volume = Math.round(savedVolume * 100);
+    previousVolume = volume > 0 ? volume : 50;
+    isMuted = volume === 0;
+    isShuffle = savedShuffle;
+    isRepeat = savedRepeat;
+    isPlaying = savedIsPlaying;
+
+    await refreshAllFilters();
+    await handleTrackChange(initialIndex);
+
+    setupMessage = "Music folder processed successfully.";
+    setupMessageKind = "success";
+
+    if (canCloseInitialSettings()) {
+      closeSettings();
+    } else {
+      isSettingsOpen = true;
+      activeSettingsSection = "general";
+    }
+  }
+
+  async function confirmMusicFolderReplacement() {
+    if (!pendingMusicFolderPath) {
+      return;
+    }
+
+    const folderPath = pendingMusicFolderPath;
+    closeMusicFolderConfirm();
+    await applyMusicFolderSelection(folderPath);
+  }
+
+  function parseSongListLimitInput(): number | null {
+    const parsed = Number.parseInt(songListLimitInput.trim(), 10);
+
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  async function saveSongListLimit() {
+    const nextLimit = parseSongListLimitInput();
+
+    if (nextLimit === null) {
+      songListLimitMessage = "Enter a whole number greater than 0.";
+      songListLimitMessageKind = "error";
+      return;
+    }
+
+    if (nextLimit === songListLimit) {
+      songListLimitInput = String(nextLimit);
+      songListLimitMessage = "Already saved.";
+      songListLimitMessageKind = "success";
+      return;
+    }
+
+    isSavingSongListLimit = true;
+    clearSongListLimitMessage();
+
+    try {
+      await invoke("set_song_list_limit", { limit: nextLimit });
+      songListLimit = nextLimit;
+      songListLimitInput = String(nextLimit);
+      songListLimitMessage = "Saved.";
+      songListLimitMessageKind = "success";
+
+      if (hasInitialized && !requiresInitialSetup()) {
+        searchResultCount = await invoke<number>("search_songs", {
+          query: searchQuery,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to save song list limit:", err);
+      songListLimitMessage = "Failed to save song list limit.";
+      songListLimitMessageKind = "error";
+    } finally {
+      isSavingSongListLimit = false;
+    }
+  }
+
+  async function handleSongListLimitKeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+    await saveSongListLimit();
+  }
+
   function openSettings() {
     isSettingsOpen = true;
     captureAction = null;
@@ -742,6 +944,7 @@
     if (isPickingMusicFolder) return;
 
     isPickingMusicFolder = true;
+    clearSetupMessage();
 
     try {
       const selected = await open({
@@ -751,54 +954,35 @@
         defaultPath: musicFolderPath || undefined,
       });
 
-      const folderPath = Array.isArray(selected) ? selected[0] : selected;
-
-      if (!folderPath || typeof folderPath !== "string") {
+      if (selected === null) {
         return;
       }
 
-      const pathChanged = folderPath !== musicFolderPath;
+      const folderPath = extractPickedPath(selected);
 
-      await invoke("set_music_folder_path", { path: folderPath });
-      musicFolderPath = folderPath;
-
-      if (pathChanged) {
-        await invoke("set_processed_music_folder", { flag: false });
-        hasProcessedMusicFolder = false;
+      if (!folderPath) {
+        console.error("Unexpected music folder selection payload:", selected);
+        setupMessage =
+          "Couldn't read the selected folder. Please try choosing it again.";
+        setupMessageKind = "error";
+        return;
       }
 
-      await invoke("process_music_folder");
-      await refreshSetupState();
-
-      const count = await invoke<number>("load");
-      searchResultCount = count;
-
-      const savedVolume = await invoke<number>("get_volume");
-      const savedShuffle = await invoke<boolean>("get_random");
-      const savedRepeat = await invoke<boolean>("get_repeat");
-      const savedIsPlaying = await invoke<boolean>("get_play_pause");
-
-      volume = Math.round(savedVolume * 100);
-      previousVolume = volume > 0 ? volume : 50;
-      isMuted = volume === 0;
-      isShuffle = savedShuffle;
-      isRepeat = savedRepeat;
-      isPlaying = savedIsPlaying;
-
-      await refreshLoadedSongs();
-      await refreshAllFilters();
-      await refreshCurrentSong();
-      await refreshSavedSeek();
-      await syncPlaybackState();
-
-      if (canCloseInitialSettings()) {
-        closeSettings();
-      } else {
-        isSettingsOpen = true;
-        activeSettingsSection = "general";
+      if (hasProcessedMusicFolder) {
+        pendingMusicFolderPath = folderPath;
+        isMusicFolderConfirmOpen = true;
+        return;
       }
+
+      await applyMusicFolderSelection(folderPath);
     } catch (err) {
       console.error("Failed to pick music folder:", err);
+      setupMessage =
+        err instanceof Error ? err.message : "Failed to process music folder.";
+      setupMessageKind = "error";
+      isInitialSetupRequired = requiresInitialSetup();
+      isSettingsOpen = true;
+      activeSettingsSection = "general";
     } finally {
       isPickingMusicFolder = false;
     }
@@ -831,11 +1015,18 @@
       Object.entries(keybinds) as Array<[KeybindAction, string]>
     ).find(([, value]) => value && value === combo);
 
-    if (isSettingsOpen || isSongFilterMenuOpen || isFilterLibraryMenuOpen) {
+    if (
+      isSettingsOpen ||
+      isSongFilterMenuOpen ||
+      isFilterLibraryMenuOpen ||
+      isMusicFolderConfirmOpen
+    ) {
       if (event.key === "Escape") {
         event.preventDefault();
 
-        if (isSongFilterMenuOpen) {
+        if (isMusicFolderConfirmOpen) {
+          closeMusicFolderConfirm();
+        } else if (isSongFilterMenuOpen) {
           closeSongFilterMenu();
         } else if (isFilterLibraryMenuOpen) {
           closeFilterLibraryMenu();
@@ -1169,6 +1360,12 @@
     return allFilters.filter((filter) => !usedIds.has(filter.id));
   }
 
+  $: if (hasLoadedSetupState && isInitialSetupRequired) {
+    isSettingsOpen = true;
+    activeSettingsSection = "general";
+    captureAction = null;
+  }
+
   $: if (hasInitialized && searchQuery !== lastSearchedQuery) {
     if (searchTimeout) clearTimeout(searchTimeout);
 
@@ -1199,7 +1396,7 @@
 
         await refreshSetupState();
 
-        if (requiresInitialSetup()) {
+        if (isInitialSetupRequired) {
           isSettingsOpen = true;
           activeSettingsSection = "general";
           songs = [];
@@ -1255,7 +1452,8 @@
     class="app-content"
     class:app-disabled={isSettingsOpen ||
       isSongFilterMenuOpen ||
-      isFilterLibraryMenuOpen}
+      isFilterLibraryMenuOpen ||
+      isMusicFolderConfirmOpen}
   >
     <div class="main-panel">
       <div class="search-row">
@@ -1755,6 +1953,78 @@
     </div>
   {/if}
 
+  {#if isMusicFolderConfirmOpen && pendingMusicFolderPath}
+    <div
+      class="settings-overlay"
+      role="presentation"
+      on:click={(event) => {
+        if (event.target === event.currentTarget) {
+          closeMusicFolderConfirm();
+        }
+      }}
+    >
+      <div
+        class="settings-modal warning-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="music-folder-confirm-title"
+      >
+        <div class="settings-header">
+          <div class="settings-title-wrap">
+            <div class="settings-icon warning-icon">
+              <Settings2 size={18} />
+            </div>
+            <div>
+              <h2 id="music-folder-confirm-title">Replace music library?</h2>
+              <p>
+                Rebuilding the library removes existing song-filter
+                associations.
+              </p>
+            </div>
+          </div>
+
+          <button
+            class="settings-close"
+            on:click={closeMusicFolderConfirm}
+            title="Close"
+            aria-label="Close warning"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div class="settings-list">
+          <div class="settings-card warning-card">
+            <div class="settings-card-title">Selected folder</div>
+            <div class="settings-card-text">{pendingMusicFolderPath}</div>
+            <div class="settings-card-text">
+              Your saved filters will stay, but their links to songs will be
+              cleared because the library is rebuilt from the selected folder.
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-footer">
+          <button
+            class="footer-button secondary-button"
+            on:click={closeMusicFolderConfirm}
+            type="button"
+          >
+            Cancel
+          </button>
+
+          <button
+            class="footer-button danger-button"
+            on:click={confirmMusicFolderReplacement}
+            type="button"
+          >
+            Replace library
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if isSettingsOpen}
     <div
       class="settings-overlay"
@@ -1824,6 +2094,17 @@
                 {musicFolderPath || "No folder selected yet."}
               </div>
 
+              {#if setupMessage}
+                <div
+                  class:error={setupMessageKind === "error"}
+                  class:info={setupMessageKind === "info"}
+                  class:success={setupMessageKind === "success"}
+                  class="settings-status"
+                >
+                  {setupMessage}
+                </div>
+              {/if}
+
               <div class="settings-card-actions">
                 <button
                   class="footer-button"
@@ -1832,6 +2113,53 @@
                   type="button"
                 >
                   {isPickingMusicFolder ? "Choosing..." : "Choose folder"}
+                </button>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-title">Song list limit</div>
+              <div class="settings-card-text">
+                Caps how many songs can be loaded into the current list and
+                search results. Higher values show more songs but can make
+                refreshes slower.
+              </div>
+
+              <label class="settings-field">
+                <span class="settings-field-label">Max songs</span>
+                <input
+                  class="settings-input"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  bind:value={songListLimitInput}
+                  on:input={clearSongListLimitMessage}
+                  on:keydown={handleSongListLimitKeydown}
+                />
+              </label>
+
+              <div class="settings-card-text">
+                Current saved limit: {songListLimit.toLocaleString()} songs.
+              </div>
+
+              {#if songListLimitMessage}
+                <div
+                  class:error={songListLimitMessageKind === "error"}
+                  class:success={songListLimitMessageKind === "success"}
+                  class="settings-status"
+                >
+                  {songListLimitMessage}
+                </div>
+              {/if}
+
+              <div class="settings-card-actions">
+                <button
+                  class="footer-button"
+                  on:click={saveSongListLimit}
+                  disabled={isSavingSongListLimit}
+                  type="button"
+                >
+                  {isSavingSongListLimit ? "Saving..." : "Save limit"}
                 </button>
               </div>
             </div>
@@ -2492,6 +2820,10 @@
     max-height: min(720px, calc(100vh - 2rem));
   }
 
+  .warning-modal {
+    width: min(560px, 100%);
+  }
+
   .filter-modal-content {
     min-height: 0;
     height: 100%;
@@ -2537,6 +2869,11 @@
     display: grid;
     place-items: center;
     flex: 0 0 auto;
+  }
+
+  .warning-icon {
+    background: #3a2618;
+    color: #ffd8b2;
   }
 
   .settings-title-wrap h2 {
@@ -2636,6 +2973,64 @@
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
+  }
+
+  .warning-card {
+    border-color: #4a2e1f;
+    background: #241812;
+  }
+
+  .settings-field {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .settings-field-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #d8d8d8;
+  }
+
+  .settings-input {
+    width: min(100%, 14rem);
+    border: 1px solid #343434;
+    border-radius: 10px;
+    background: #131313;
+    color: #f5f5f5;
+    padding: 0.75rem 0.9rem;
+    font: inherit;
+  }
+
+  .settings-input:focus {
+    outline: none;
+    border-color: #4f8b61;
+    box-shadow: 0 0 0 3px rgba(79, 139, 97, 0.18);
+  }
+
+  .settings-status {
+    font-size: 0.9rem;
+    color: #b3b3b3;
+  }
+
+  .settings-status.success {
+    color: #9fd7b0;
+  }
+
+  .settings-status.info {
+    color: #9ec8ff;
+  }
+
+  .settings-status.error {
+    color: #f3a6a6;
+  }
+
+  .danger-button {
+    background: #8e2f22;
+    color: #fff5f2;
+  }
+
+  .danger-button:hover {
+    background: #a93b2b;
   }
 
   .keybind-row {

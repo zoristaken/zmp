@@ -49,6 +49,36 @@ impl HasPool<Sqlite> for SqliteDb {
 
 #[async_trait]
 impl SongRepository<Sqlite> for SqliteDb {
+    async fn replace_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        sqlx::query("DELETE FROM song").execute(&mut *conn).await?;
+
+        for val in songs {
+            sqlx::query(
+                "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&val.title)
+            .bind(&val.artist)
+            .bind(val.release_year)
+            .bind(&val.album)
+            .bind(&val.remix)
+            .bind(&val.search_blob)
+            .bind(&val.file_path)
+            .bind(val.duration)
+            .bind(&val.extension)
+            .execute(&mut *conn)
+            .await
+            .with_context(|| format!("failed inserting replacement song: {:?}", val))?;
+        }
+
+        Ok(())
+    }
+
     async fn add_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = Sqlite> + Send,

@@ -101,7 +101,7 @@ async fn integration_search_by_filters_in_memory_input() {
 
     let songs = sample_songs();
     let results = service
-        .search_by(&songs, &["boards", "ambient"], 10)
+        .search_by(&songs, &["boards", "1998"], 10)
         .await
         .unwrap();
 
@@ -117,7 +117,7 @@ async fn integration_search_by_honors_max_results() {
     let service = SongService::new(sqlite);
 
     let songs = sample_songs();
-    let results = service.search_by(&songs, &["electronic"], 1).await.unwrap();
+    let results = service.search_by(&songs, &["1998"], 1).await.unwrap();
 
     assert_eq!(results.len(), 1);
 }
@@ -169,7 +169,7 @@ async fn integration_search_by_db_honors_max_results() {
         .unwrap();
 
     let results = service
-        .search_by_db(&service.pool, &["electronic"], 1)
+        .search_by_db(&service.pool, &["1998"], 1)
         .await
         .unwrap();
     assert_eq!(results.len(), 1);
@@ -193,4 +193,87 @@ async fn integration_search_by_db_alternative_finds_matching_rows() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].title, "Windowlicker");
+}
+
+#[tokio::test]
+async fn integration_replace_songs_replaces_existing_library_contents() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = SongService::new(sqlite);
+
+    service
+        .add_songs(&service.pool, sample_songs())
+        .await
+        .unwrap();
+
+    let replacement = vec![crate::common::song(
+        0,
+        "Archangel",
+        "Burial",
+        2007,
+        "Untrue",
+        "",
+        "archangel burial untrue 2007",
+        "/music/archangel.flac",
+        230,
+        "flac",
+    )];
+
+    service
+        .replace_songs(&service.pool, replacement)
+        .await
+        .unwrap();
+
+    let songs = service.list_songs(&service.pool).await.unwrap();
+
+    assert_eq!(songs.len(), 1);
+    assert_eq!(songs[0].title, "Archangel");
+    assert_eq!(songs[0].artist, "Burial");
+}
+
+#[tokio::test]
+async fn integration_replace_songs_allows_duplicate_title_artist_with_different_paths() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = SongService::new(sqlite);
+
+    service
+        .replace_songs(
+            &service.pool,
+            vec![
+                crate::common::song(
+                    0,
+                    "Freak On a Leash",
+                    "Korn",
+                    1998,
+                    "Follow the Leader",
+                    "",
+                    "freak on a leash korn follow the leader 1998",
+                    "/music/korn/follow-the-leader/11 - Korn - Freak On a Leash.flac",
+                    255,
+                    "flac",
+                ),
+                crate::common::song(
+                    0,
+                    "Freak On a Leash",
+                    "Korn",
+                    2011,
+                    "The Essential Korn",
+                    "",
+                    "freak on a leash korn the essential korn 2011",
+                    "/music/korn/the-essential-korn/11 - Korn - Freak On a Leash.flac",
+                    255,
+                    "flac",
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let songs = service.list_songs(&service.pool).await.unwrap();
+
+    assert_eq!(songs.len(), 2);
+    assert_eq!(songs[0].title, "Freak On a Leash");
+    assert_eq!(songs[1].title, "Freak On a Leash");
+    assert_ne!(songs[0].file_path, songs[1].file_path);
 }

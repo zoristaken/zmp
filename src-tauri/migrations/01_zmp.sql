@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS song (
     file_path    TEXT,
     extension    TEXT,
     duration     INTEGER,
-    UNIQUE(title, artist, remix)
+    UNIQUE(file_path)
 );
 
 CREATE TABLE IF NOT EXISTS filter

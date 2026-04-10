@@ -10,11 +10,10 @@ use crate::{
     song::{SongRepository, SongService},
     song_filter::{SongFilterRepository, SongFilterService},
     song_mutation::{SongMutationRepository, SongMutationService},
-    song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
+    song_query::{SongQueryRepository, SongQueryService},
     sqlite::SqliteDb,
 };
 pub struct AppState {
-    pub loaded_songs: Mutex<Vec<SongWithFilters>>,
     pub zmp: PlayerManager<SqliteDb, Sqlite>,
 }
 
@@ -77,19 +76,22 @@ where
     }
 
     pub async fn process_music_folder(&self) -> anyhow::Result<()> {
-        if !self.setting.has_processed_music_folder(&self.pool).await {
-            let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
-            let songs = self
-                .metadata_parser
-                .parse_song_metadata(Path::new(&folder_path))?;
+        let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
+        let songs = self
+            .metadata_parser
+            .parse_song_metadata(Path::new(&folder_path))?;
 
-            let mut tx = self.pool.begin().await?;
-            self.setting
-                .set_processed_music_folder(&mut tx, true)
-                .await?;
-            self.song.add_songs(&mut tx, songs).await?;
-            tx.commit().await?
-        }
+        let mut tx = self.pool.begin().await?;
+        self.song.replace_songs(&mut tx, songs).await?;
+        self.setting.set_saved_search_blob(&mut tx, "").await?;
+        self.setting.set_saved_index(&mut tx, 0).await?;
+        self.setting.set_current_song_seek(&mut tx, 0).await?;
+        self.setting.set_play_pause_flag(&mut tx, false).await?;
+        self.setting
+            .set_processed_music_folder(&mut tx, true)
+            .await?;
+        tx.commit().await?;
+
         Ok(())
     }
 }

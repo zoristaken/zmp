@@ -24,6 +24,10 @@ pub trait SongRepository<DB>
 where
     DB: Database,
 {
+    async fn replace_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send;
+
     async fn add_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send;
@@ -97,6 +101,13 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.add_all(acquiree, songs).await
+    }
+
+    pub async fn replace_songs<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.replace_all(acquiree, songs).await
     }
 
     pub async fn list_songs<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>

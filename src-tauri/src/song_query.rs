@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData};
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -30,34 +30,54 @@ pub struct SongWithFilterRow {
 }
 
 pub fn group_rows(rows: Vec<SongWithFilterRow>) -> Vec<SongWithFilters> {
-    let mut grouped: BTreeMap<i32, SongWithFilters> = BTreeMap::new();
+    let mut grouped = Vec::new();
+    let mut positions = HashMap::new();
 
     for row in rows {
-        let entry = grouped.entry(row.id).or_insert_with(|| SongWithFilters {
-            song: Song {
-                id: row.id,
-                title: row.title.clone(),
-                artist: row.artist.clone(),
-                release_year: row.release_year,
-                album: row.album.clone(),
-                remix: row.remix.clone(),
-                search_blob: row.search_blob.clone(),
-                file_path: row.file_path.clone(),
-                duration: row.duration,
-                extension: row.extension.clone(),
-            },
-            filters: Vec::new(),
+        let SongWithFilterRow {
+            id,
+            title,
+            artist,
+            release_year,
+            album,
+            remix,
+            search_blob,
+            file_path,
+            duration,
+            extension,
+            filter_id,
+            filter_name,
+        } = row;
+
+        let position = *positions.entry(id).or_insert_with(|| {
+            let position = grouped.len();
+            grouped.push(SongWithFilters {
+                song: Song {
+                    id,
+                    title,
+                    artist,
+                    release_year,
+                    album,
+                    remix,
+                    search_blob,
+                    file_path,
+                    duration,
+                    extension,
+                },
+                filters: Vec::new(),
+            });
+            position
         });
 
-        if let (Some(filter_id), Some(filter_name)) = (row.filter_id, row.filter_name) {
-            entry.filters.push(Filter {
+        if let (Some(filter_id), Some(filter_name)) = (filter_id, filter_name) {
+            grouped[position].filters.push(Filter {
                 id: filter_id,
                 name: filter_name,
             });
         }
     }
 
-    grouped.into_values().collect()
+    grouped
 }
 
 #[async_trait]

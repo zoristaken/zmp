@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::Sqlite;
+use sqlx::{Acquire, Sqlite};
 use tauri::{AppHandle, Emitter};
 
 use crate::{
@@ -17,45 +17,55 @@ fn emit_track_changed(app: &AppHandle, current_index: Option<usize>) -> Result<(
         .map_err(|e| e.to_string())
 }
 
-async fn refresh_loaded_song_state_in_tx(
+async fn query_song_list<'a, A>(
+    state: &AppState,
+    acquiree: A,
+    query: &str,
+    limit: i32,
+) -> Result<Vec<SongWithFilters>, String>
+where
+    A: Acquire<'a, Database = Sqlite> + Send,
+{
+    let trimmed = query.trim();
+
+    if trimmed.is_empty() {
+        state
+            .zmp
+            .song_query
+            .list_songs_with_filters(acquiree)
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        let words: Vec<&str> = trimmed.split_whitespace().collect();
+
+        state
+            .zmp
+            .song_query
+            .search_by_db_with_filters(acquiree, &words, limit)
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
+async fn load_song_list_in_tx(
     state: &AppState,
     tx: &mut sqlx::Transaction<'_, Sqlite>,
-) -> Result<(), String> {
+) -> Result<Vec<SongWithFilters>, String> {
     let saved_search = state
         .zmp
         .setting
         .get_saved_search_blob(&mut *tx)
         .await
         .unwrap_or_default();
+    let song_list_limit = state.zmp.setting.get_song_list_limit(&mut *tx).await;
 
-    let songs: Vec<SongWithFilters> = if saved_search.trim().is_empty() {
-        state
-            .zmp
-            .song_query
-            .list_songs_with_filters(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
-    } else {
-        let words: Vec<&str> = saved_search.split_whitespace().collect();
+    query_song_list(state, &mut *tx, &saved_search, song_list_limit).await
+}
 
-        state
-            .zmp
-            .song_query
-            .search_by_db_with_filters(&mut *tx, &words, 10000)
-            .await
-            .map_err(|e| e.to_string())?
-    };
-
-    {
-        let mut stored = state
-            .loaded_songs
-            .lock()
-            .map_err(|_| "failed to lock loaded songs".to_string())?;
-
-        *stored = songs;
-    }
-
-    Ok(())
+fn sync_song_list(state: &AppState, songs: Vec<SongWithFilters>) -> Result<Option<usize>, String> {
+    let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+    player.set_queue(songs).map_err(|e| e.to_string())?;
+    Ok(player.current_index())
 }
 
 #[tauri::command]
@@ -76,29 +86,7 @@ pub async fn load(
 ) -> Result<usize, String> {
     let mut tx = state.zmp.pool.begin().await.map_err(|e| e.to_string())?;
 
-    let saved_search = state
-        .zmp
-        .setting
-        .get_saved_search_blob(&mut tx)
-        .await
-        .unwrap_or_default();
-
-    let songs = if saved_search.trim().is_empty() {
-        state
-            .zmp
-            .song_query
-            .list_songs_with_filters(&mut tx)
-            .await
-            .map_err(|e| e.to_string())?
-    } else {
-        let words: Vec<&str> = saved_search.split_whitespace().collect();
-        state
-            .zmp
-            .song_query
-            .search_by_db_with_filters(&mut tx, &words, 100)
-            .await
-            .map_err(|e| e.to_string())?
-    };
+    let songs = load_song_list_in_tx(&state, &mut tx).await?;
 
     let is_shuffle = state.zmp.setting.is_random_play(&mut tx).await;
     let is_repeat = state.zmp.setting.is_repeat_flag(&mut tx).await;
@@ -108,14 +96,6 @@ pub async fn load(
     let saved_play_pause_flag = state.zmp.setting.is_playing(&mut tx).await;
 
     let count = songs.len();
-
-    {
-        let mut stored = state
-            .loaded_songs
-            .lock()
-            .map_err(|_| "failed to lock state".to_string())?;
-        *stored = songs.clone();
-    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
@@ -142,7 +122,7 @@ pub async fn get_music_folder_path(state: tauri::State<'_, AppState>) -> Result<
         .setting
         .get_music_folder_path(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .unwrap_or_default();
 
     Ok(path)
 }
@@ -190,10 +170,28 @@ pub async fn set_processed_music_folder(
 
 #[tauri::command]
 pub async fn get_saved_search_blob(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    state
+    Ok(state
         .zmp
         .setting
         .get_saved_search_blob(&state.zmp.pool)
+        .await
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn get_song_list_limit(state: tauri::State<'_, AppState>) -> Result<i32, String> {
+    Ok(state.zmp.setting.get_song_list_limit(&state.zmp.pool).await)
+}
+
+#[tauri::command]
+pub async fn set_song_list_limit(
+    state: tauri::State<'_, AppState>,
+    limit: i32,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_song_list_limit(&state.zmp.pool, limit)
         .await
         .map_err(|e| e.to_string())
 }
@@ -216,11 +214,8 @@ pub async fn get_current_song(
 pub async fn get_loaded_songs(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<SongWithFilters>, String> {
-    let songs = state
-        .loaded_songs
-        .lock()
-        .map_err(|_| "failed to lock loaded songs".to_string())?
-        .clone();
+    let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
+    let songs = player.queue().to_vec();
 
     Ok(songs)
 }
@@ -237,15 +232,8 @@ pub async fn play_song_at(
     state: tauri::State<'_, AppState>,
     index: usize,
 ) -> Result<(), String> {
-    let songs = state
-        .loaded_songs
-        .lock()
-        .map_err(|_| "failed to lock loaded songs".to_string())?
-        .clone();
-
     let current_index = {
         let mut player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-        player.set_queue(songs).map_err(|e| e.to_string())?;
         player
             .play_song_at(index, true, true)
             .map_err(|e| e.to_string())?;
@@ -272,6 +260,7 @@ pub async fn play_song_at(
 
 #[tauri::command]
 pub async fn search_songs(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     query: String,
 ) -> Result<usize, String> {
@@ -283,35 +272,14 @@ pub async fn search_songs(
         .set_saved_search_blob(&state.zmp.pool, trimmed)
         .await
         .map_err(|e| e.to_string())?;
+    let song_list_limit = state.zmp.setting.get_song_list_limit(&state.zmp.pool).await;
 
-    let songs = if trimmed.is_empty() {
-        state
-            .zmp
-            .song_query
-            .list_songs_with_filters(&state.zmp.pool)
-            .await
-            .map_err(|e| e.to_string())?
-    } else {
-        let words: Vec<&str> = trimmed.split_whitespace().collect();
-
-        state
-            .zmp
-            .song_query
-            .search_by_db_with_filters(&state.zmp.pool, &words, 10000)
-            .await
-            .map_err(|e| e.to_string())?
-    };
+    let songs = query_song_list(&state, &state.zmp.pool, trimmed, song_list_limit).await?;
 
     let count = songs.len();
+    let current_index = sync_song_list(&state, songs)?;
 
-    {
-        let mut stored = state
-            .loaded_songs
-            .lock()
-            .map_err(|_| "failed to lock loaded songs".to_string())?;
-        *stored = songs;
-    }
-
+    emit_track_changed(&app, current_index)?;
     Ok(count)
 }
 
@@ -374,13 +342,15 @@ pub async fn previous_song(
 }
 
 #[tauri::command]
-pub async fn get_focus_search_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_focus_search_keybind(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_focus_search_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -401,13 +371,15 @@ pub async fn set_focus_search_keybind(
 }
 
 #[tauri::command]
-pub async fn get_settings_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_settings_keybind(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_settings_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -428,13 +400,13 @@ pub async fn set_settings_keybind(
 }
 
 #[tauri::command]
-pub async fn get_mute_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_mute_keybind(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_mute_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -455,13 +427,15 @@ pub async fn set_mute_keybind(
 }
 
 #[tauri::command]
-pub async fn get_shuffle_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_shuffle_keybind(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_shuffle_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -482,13 +456,15 @@ pub async fn set_shuffle_keybind(
 }
 
 #[tauri::command]
-pub async fn get_repeat_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_repeat_keybind(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_repeat_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -509,13 +485,13 @@ pub async fn set_repeat_keybind(
 }
 
 #[tauri::command]
-pub async fn get_next_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_next_keybind(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_next_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -536,13 +512,15 @@ pub async fn set_next_keybind(
 }
 
 #[tauri::command]
-pub async fn get_previous_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_previous_keybind(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_previous_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -563,13 +541,15 @@ pub async fn set_previous_keybind(
 }
 
 #[tauri::command]
-pub async fn get_play_pause_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn get_play_pause_keybind(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let value = state
         .zmp
         .setting
         .get_play_pause_keybind(&state.zmp.pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .ok();
 
     Ok(value)
 }
@@ -770,15 +750,19 @@ pub async fn remove_filter(
             .refresh_all_song_search_blobs(&mut tx)
             .await
             .map_err(|e| e.to_string())?;
-
-        refresh_loaded_song_state_in_tx(&state, &mut tx).await?
     }
+
+    let songs = if removed {
+        Some(load_song_list_in_tx(&state, &mut tx).await?)
+    } else {
+        None
+    };
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    if removed {
-        let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-        emit_track_changed(&app, player.current_index())?;
+    if let Some(songs) = songs {
+        let current_index = sync_song_list(&state, songs)?;
+        emit_track_changed(&app, current_index)?;
     }
 
     Ok(removed)
@@ -823,15 +807,17 @@ pub async fn add_filter_to_song(
         .await
         .map_err(|e| e.to_string())?;
 
-    if saved {
-        refresh_loaded_song_state_in_tx(&state, &mut tx).await?
-    }
+    let songs = if saved {
+        Some(load_song_list_in_tx(&state, &mut tx).await?)
+    } else {
+        None
+    };
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    if saved {
-        let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-        emit_track_changed(&app, player.current_index())?;
+    if let Some(songs) = songs {
+        let current_index = sync_song_list(&state, songs)?;
+        emit_track_changed(&app, current_index)?;
     }
 
     Ok(saved)
@@ -851,15 +837,17 @@ pub async fn remove_filter_from_song(
         .await
         .map_err(|e| e.to_string())?;
 
-    if removed {
-        refresh_loaded_song_state_in_tx(&state, &mut tx).await?
-    }
+    let songs = if removed {
+        Some(load_song_list_in_tx(&state, &mut tx).await?)
+    } else {
+        None
+    };
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    if removed {
-        let player = state.zmp.player.lock().map_err(|e| e.to_string())?;
-        emit_track_changed(&app, player.current_index())?;
+    if let Some(songs) = songs {
+        let current_index = sync_song_list(&state, songs)?;
+        emit_track_changed(&app, current_index)?;
     }
 
     Ok(removed)

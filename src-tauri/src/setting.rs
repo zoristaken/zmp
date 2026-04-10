@@ -8,6 +8,7 @@ const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
 const PROCESSED_MUSIC_FLAG: &str = "processed_music_flag";
 const VOLUME_VALUE: &str = "volume_value";
 const SEARCH_BLOB: &str = "search_blob";
+const SONG_LIST_LIMIT: &str = "song_list_limit";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
 const PLAY_PAUSE_FLAG: &str = "play_pause_flag";
@@ -22,6 +23,7 @@ const SETTINGS_KEYBIND: &str = "settings_kb";
 const INDEX_VALUE: &str = "index_value";
 const CURRENT_SEEK_VALUE: &str = "current_seek_value";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
+pub const DEFAULT_SONG_LIST_LIMIT: i32 = 10_000;
 
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
@@ -118,6 +120,30 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.set(acquiree, SEARCH_BLOB, search_blob).await
+    }
+
+    pub async fn get_song_list_limit<'a, A>(&self, acquiree: A) -> i32
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self.get(acquiree, SONG_LIST_LIMIT).await {
+            Ok(setting) => match setting.value.parse::<i32>() {
+                Ok(limit) if limit > 0 => limit,
+                _ => DEFAULT_SONG_LIST_LIMIT,
+            },
+            Err(_) => DEFAULT_SONG_LIST_LIMIT,
+        }
+    }
+
+    pub async fn set_song_list_limit<'a, A>(&self, acquiree: A, limit: i32) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        if limit <= 0 {
+            anyhow::bail!("song list limit must be greater than 0");
+        }
+
+        self.set(acquiree, SONG_LIST_LIMIT, &limit.to_string()).await
     }
 
     pub async fn get_saved_index<'a, A>(&self, acquiree: A) -> usize

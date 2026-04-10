@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use tauri::Manager;
 
 use crate::{
@@ -16,8 +14,8 @@ pub mod player;
 pub mod setting;
 pub mod song;
 pub mod song_filter;
-mod song_mutation;
-mod song_query;
+pub mod song_mutation;
+pub mod song_query;
 pub mod sqlite;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -36,6 +34,8 @@ pub fn run() {
             commands::get_current_index,
             commands::get_current_song,
             commands::get_saved_search_blob,
+            commands::get_song_list_limit,
+            commands::set_song_list_limit,
             commands::get_loaded_songs,
             commands::play_song_at,
             commands::next_song,
@@ -81,7 +81,6 @@ pub fn run() {
                 let path = config.db_path().await.unwrap();
                 let sqlite = SqliteDb::new(&path).await.unwrap();
                 app.manage(AppState {
-                    loaded_songs: Mutex::new(Vec::new()),
                     zmp: PlayerManager::new(sqlite.clone()).await,
                 });
             });

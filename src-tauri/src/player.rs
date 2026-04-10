@@ -21,6 +21,10 @@ impl Player {
         self.current_index
     }
 
+    pub fn queue(&self) -> &[SongWithFilters] {
+        &self.queue
+    }
+
     pub fn new(
         current_index: Option<usize>,
         shuffle: bool,
@@ -54,10 +58,10 @@ impl Player {
     ) -> anyhow::Result<Option<usize>> {
         self.set_shuffle(is_shuffle);
         self.set_repeat(is_repeat);
-        self.set_queue(songs.clone())?;
+        self.set_queue(songs)?;
 
-        if !songs.is_empty() {
-            let index = saved_index.min(songs.len() - 1);
+        if !self.queue.is_empty() {
+            let index = saved_index.min(self.queue.len() - 1);
             self.play_song_at(index, saved_play_pause_flag, false)?;
 
             if saved_seek > 0 {
@@ -107,7 +111,10 @@ impl Player {
     }
 
     pub fn set_queue(&mut self, songs: Vec<SongWithFilters>) -> anyhow::Result<()> {
-        let current_song = self.current_index.and_then(|i| self.queue.get(i)).cloned();
+        let current_song_id = self
+            .current_index
+            .and_then(|i| self.queue.get(i))
+            .map(|song| song.song.id);
 
         self.queue = songs;
 
@@ -120,9 +127,8 @@ impl Player {
         //set the current index to the previous song index if existed
         //this is needed because the list of songs can change, in which case
         //the current index of the previous song can be different
-        self.current_index = current_song
-            .and_then(|song| self.queue.iter().position(|s| *s == song))
-            .or(None);
+        self.current_index = current_song_id
+            .and_then(|song_id| self.queue.iter().position(|song| song.song.id == song_id));
 
         Ok(())
     }
