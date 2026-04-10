@@ -294,6 +294,222 @@ pub async fn previous_song(
 }
 
 #[tauri::command]
+pub async fn get_focus_search_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_focus_search_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_focus_search_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_focus_search_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_settings_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_settings_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_settings_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_settings_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_mute_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_mute_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_mute_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_mute_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_shuffle_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_shuffle_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_shuffle_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_shuffle_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_repeat_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_repeat_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_repeat_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_repeat_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_next_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_next_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_next_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_next_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_previous_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_previous_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_previous_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_previous_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_play_pause_keybind(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .zmp
+        .setting
+        .get_play_pause_keybind(&state.zmp.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn set_play_pause_keybind(
+    state: tauri::State<'_, AppState>,
+    keybind: String,
+) -> Result<(), String> {
+    state
+        .zmp
+        .setting
+        .set_play_pause_keybind(&state.zmp.pool, &keybind)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_current_song_seek(state: tauri::State<'_, AppState>) -> Result<usize, String> {
     let value = state
         .zmp

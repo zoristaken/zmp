@@ -47,8 +47,6 @@
 
   type KeybindMap = Record<KeybindAction, string>;
 
-  const KEYBINDS_STORAGE_KEY = "player-keybinds";
-
   const defaultKeybinds: KeybindMap = {
     playPause: "Space",
     previous: "A",
@@ -69,6 +67,28 @@
     mute: "Mute / Unmute",
     toggleSearch: "Focus / Unfocus search",
     toggleSettings: "Open / Close settings",
+  };
+
+  const getKeybindCommands: Record<KeybindAction, string> = {
+    playPause: "get_play_pause_keybind",
+    previous: "get_previous_keybind",
+    next: "get_next_keybind",
+    repeat: "get_repeat_keybind",
+    shuffle: "get_shuffle_keybind",
+    mute: "get_mute_keybind",
+    toggleSearch: "get_focus_search_keybind",
+    toggleSettings: "get_settings_keybind",
+  };
+
+  const setKeybindCommands: Record<KeybindAction, string> = {
+    playPause: "set_play_pause_keybind",
+    previous: "set_previous_keybind",
+    next: "set_next_keybind",
+    repeat: "set_repeat_keybind",
+    shuffle: "set_shuffle_keybind",
+    mute: "set_mute_keybind",
+    toggleSearch: "set_focus_search_keybind",
+    toggleSettings: "set_settings_keybind",
   };
 
   let isPlaying = false;
@@ -492,27 +512,28 @@
     return parts.join("+");
   }
 
-  //TODO: refactor to use backend's database keybind setting storage
-  function saveKeybinds() {
-    localStorage.setItem(KEYBINDS_STORAGE_KEY, JSON.stringify(keybinds));
+  async function loadKeybinds() {
+    const nextKeybinds = { ...defaultKeybinds };
+
+    for (const action of Object.keys(defaultKeybinds) as KeybindAction[]) {
+      try {
+        const value = await invoke<string | null>(getKeybindCommands[action]);
+        if (value !== null && value !== undefined) {
+          nextKeybinds[action] = value;
+        }
+      } catch (err) {
+        console.error(`Failed to load keybind for ${action}:`, err);
+      }
+    }
+
+    keybinds = nextKeybinds;
   }
 
-  function loadKeybinds() {
+  async function persistKeybind(action: KeybindAction, combo: string) {
     try {
-      const raw = localStorage.getItem(KEYBINDS_STORAGE_KEY);
-      if (!raw) {
-        keybinds = { ...defaultKeybinds };
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as Partial<KeybindMap>;
-      keybinds = {
-        ...defaultKeybinds,
-        ...parsed,
-      };
+      await invoke(setKeybindCommands[action], { keybind: combo });
     } catch (err) {
-      console.error("Failed to load keybinds:", err);
-      keybinds = { ...defaultKeybinds };
+      console.error(`Failed to save keybind for ${action}:`, err);
     }
   }
 
@@ -539,18 +560,33 @@
   }
 
   function clearKeybind(action: KeybindAction) {
+    if (keybinds[action] === "") {
+      captureAction = null;
+      return;
+    }
+
     keybinds = {
       ...keybinds,
       [action]: "",
     };
-    saveKeybinds();
+
+    void persistKeybind(action, "");
     captureAction = null;
   }
 
-  function resetKeybinds() {
-    keybinds = { ...defaultKeybinds };
-    saveKeybinds();
+  async function resetKeybinds() {
     captureAction = null;
+
+    for (const action of Object.keys(defaultKeybinds) as KeybindAction[]) {
+      const defaultValue = defaultKeybinds[action];
+      const currentValue = keybinds[action];
+
+      if (currentValue !== defaultValue) {
+        await persistKeybind(action, defaultValue);
+      }
+    }
+
+    keybinds = { ...defaultKeybinds };
   }
 
   function toggleSearchFocus() {
@@ -567,18 +603,25 @@
     searchInput.select();
   }
 
-  function setKeybind(action: KeybindAction, combo: string) {
+  async function setKeybind(action: KeybindAction, combo: string) {
     const updated = { ...keybinds };
+    const actionsToPersist: Array<[KeybindAction, string]> = [];
 
     for (const existingAction of Object.keys(updated) as KeybindAction[]) {
       if (existingAction !== action && updated[existingAction] === combo) {
         updated[existingAction] = "";
+        actionsToPersist.push([existingAction, ""]);
       }
     }
 
     updated[action] = combo;
+    actionsToPersist.push([action, combo]);
+
     keybinds = updated;
-    saveKeybinds();
+
+    for (const [persistAction, persistCombo] of actionsToPersist) {
+      await persistKeybind(persistAction, persistCombo);
+    }
   }
 
   async function runKeybindAction(action: KeybindAction) {
@@ -627,7 +670,7 @@
       const combo = keyEventToCombo(event);
       if (!combo) return;
 
-      setKeybind(captureAction, combo);
+      await setKeybind(captureAction, combo);
       captureAction = null;
       return;
     }
@@ -683,11 +726,11 @@
   onMount(() => {
     let unlisten: (() => void) | undefined;
 
-    loadKeybinds();
     window.addEventListener("keydown", handleGlobalKeydown);
 
     void (async () => {
       try {
+        await loadKeybinds();
         await invoke<number>("init");
 
         unlisten = await listen<TrackChangedPayload>(

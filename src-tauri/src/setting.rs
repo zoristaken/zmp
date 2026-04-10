@@ -11,11 +11,14 @@ const SEARCH_BLOB: &str = "search_blob";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
 const PLAY_PAUSE_FLAG: &str = "play_pause_flag";
-const SETTINGS_KEYBIND: &str = "settings_kb";
-const PLAY_STOP_KEYBIND: &str = "play_stop_kb";
+const PLAY_PAUSE_KEYBIND: &str = "play_pause_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
-const RANDOM_KEYBIND: &str = "random_kb";
+const REPEAT_KEYBIND: &str = "repeat_kb";
+const SHUFFLE_KEYBIND: &str = "shuffle_kb";
+const MUTE_KEYBIND: &str = "mute_kb";
+const FOCUS_SEARCH_KEYBIND: &str = "focus_search_kb";
+const SETTINGS_KEYBIND: &str = "settings_kb";
 const INDEX_VALUE: &str = "index_value";
 const CURRENT_SEEK_VALUE: &str = "current_seek_value";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
@@ -242,20 +245,72 @@ where
         }
     }
 
-    pub async fn set_random_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn get_focus_search_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, RANDOM_KEYBIND, key).await
-    }
-
-    pub async fn get_random_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        let setting = self.get(executor, RANDOM_KEYBIND).await?;
+        let setting = self.get(executor, FOCUS_SEARCH_KEYBIND).await?;
 
         Ok(setting.value)
+    }
+
+    pub async fn set_focus_search_keybind<'a, A>(
+        &self,
+        executor: A,
+        key: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, FOCUS_SEARCH_KEYBIND, key).await
+    }
+
+    pub async fn get_mute_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let setting = self.get(executor, MUTE_KEYBIND).await?;
+
+        Ok(setting.value)
+    }
+
+    pub async fn set_mute_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, MUTE_KEYBIND, key).await
+    }
+
+    pub async fn get_repeat_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let setting = self.get(executor, REPEAT_KEYBIND).await?;
+
+        Ok(setting.value)
+    }
+
+    pub async fn set_repeat_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, REPEAT_KEYBIND, key).await
+    }
+
+    pub async fn get_shuffle_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let setting = self.get(executor, SHUFFLE_KEYBIND).await?;
+
+        Ok(setting.value)
+    }
+
+    pub async fn set_shuffle_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(executor, SHUFFLE_KEYBIND, key).await
     }
 
     pub async fn set_previous_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
@@ -290,18 +345,18 @@ where
         Ok(setting.value)
     }
 
-    pub async fn set_play_stop_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_play_pause_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, PLAY_STOP_KEYBIND, key).await
+        self.set(executor, PLAY_PAUSE_KEYBIND, key).await
     }
 
-    pub async fn get_play_stop_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_play_pause_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, PLAY_STOP_KEYBIND).await?;
+        let setting = self.get(executor, PLAY_PAUSE_KEYBIND).await?;
 
         Ok(setting.value)
     }

@@ -130,7 +130,7 @@ async fn integration_keybind_roundtrips() {
         .await
         .unwrap();
     service
-        .set_play_stop_keybind(&service.pool, "Space")
+        .set_play_pause_keybind(&service.pool, "Space")
         .await
         .unwrap();
     service
@@ -142,7 +142,7 @@ async fn integration_keybind_roundtrips() {
         .await
         .unwrap();
     service
-        .set_random_keybind(&service.pool, "Ctrl+R")
+        .set_shuffle_keybind(&service.pool, "Ctrl+R")
         .await
         .unwrap();
     service
@@ -155,7 +155,7 @@ async fn integration_keybind_roundtrips() {
         "Ctrl+,"
     );
     assert_eq!(
-        service.get_play_stop_keybind(&service.pool).await.unwrap(),
+        service.get_play_pause_keybind(&service.pool).await.unwrap(),
         "Space"
     );
     assert_eq!(
@@ -167,7 +167,7 @@ async fn integration_keybind_roundtrips() {
         "Ctrl+Right"
     );
     assert_eq!(
-        service.get_random_keybind(&service.pool).await.unwrap(),
+        service.get_shuffle_keybind(&service.pool).await.unwrap(),
         "Ctrl+R"
     );
     assert_eq!(

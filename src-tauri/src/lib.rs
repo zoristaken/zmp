@@ -45,6 +45,22 @@ pub fn run() {
             commands::set_random,
             commands::get_repeat,
             commands::set_repeat,
+            commands::get_mute_keybind,
+            commands::set_mute_keybind,
+            commands::get_next_keybind,
+            commands::set_next_keybind,
+            commands::get_repeat_keybind,
+            commands::set_repeat_keybind,
+            commands::get_shuffle_keybind,
+            commands::set_shuffle_keybind,
+            commands::get_previous_keybind,
+            commands::set_previous_keybind,
+            commands::get_settings_keybind,
+            commands::set_settings_keybind,
+            commands::get_play_pause_keybind,
+            commands::set_play_pause_keybind,
+            commands::get_focus_search_keybind,
+            commands::set_focus_search_keybind,
         ])
         .setup(|app| {
             tauri::async_runtime::block_on(async move {
