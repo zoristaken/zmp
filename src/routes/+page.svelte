@@ -351,6 +351,17 @@
   }
 
   async function playSelectedSong(index: number) {
+    const targetSong = songs[index];
+    if (!targetSong) return;
+
+    const isAlreadyCurrentSong = currentSong?.song.id === targetSong.song.id;
+    if (isAlreadyCurrentSong) {
+      selectedIndex = index;
+      selectedSongId = targetSong.song.id;
+      await ensureSelectedSongIsVisible();
+      return;
+    }
+
     try {
       await invoke("play_song_at", { index });
     } catch (err) {
@@ -412,7 +423,9 @@
     }
   }
 
-  async function performSearch() {
+  async function performSearch(options?: { playResult?: boolean }) {
+    const playResult = options?.playResult ?? false;
+    const previousCurrentSongId = currentSong?.song.id ?? null;
     const previousSelectedSongId = selectedSongId;
     const previousSelectedIndex = selectedIndex;
 
@@ -427,12 +440,22 @@
 
       let nextSelectedIndex: number | null = null;
 
-      if (previousSelectedSongId !== null) {
+      if (previousCurrentSongId !== null) {
+        const currentSongVisibleIndex = songs.findIndex(
+          (song) => song.song.id === previousCurrentSongId,
+        );
+        if (currentSongVisibleIndex >= 0) {
+          nextSelectedIndex = currentSongVisibleIndex;
+        }
+      }
+
+      if (nextSelectedIndex === null && previousSelectedSongId !== null) {
         const visibleSelectedIndex = songs.findIndex(
           (song) => song.song.id === previousSelectedSongId,
         );
-        nextSelectedIndex =
-          visibleSelectedIndex >= 0 ? visibleSelectedIndex : null;
+        if (visibleSelectedIndex >= 0) {
+          nextSelectedIndex = visibleSelectedIndex;
+        }
       }
 
       if (
@@ -444,7 +467,7 @@
         nextSelectedIndex = previousSelectedIndex;
       }
 
-      if (nextSelectedIndex === null && count > 0) {
+      if (playResult && nextSelectedIndex === null && count > 0) {
         nextSelectedIndex = 0;
       }
 
@@ -452,12 +475,19 @@
       selectedSongId =
         nextSelectedIndex !== null && songs[nextSelectedIndex]
           ? songs[nextSelectedIndex].song.id
-          : null;
+          : previousCurrentSongId;
 
       await ensureSelectedSongIsVisible();
 
-      if (nextSelectedIndex !== null) {
-        await playSelectedSong(nextSelectedIndex);
+      if (
+        playResult &&
+        nextSelectedIndex !== null &&
+        songs[nextSelectedIndex]
+      ) {
+        const nextSongId = songs[nextSelectedIndex].song.id;
+        if (nextSongId !== previousCurrentSongId) {
+          await playSelectedSong(nextSelectedIndex);
+        }
       }
     } catch (err) {
       console.error("Failed to search songs:", err);
@@ -473,7 +503,7 @@
         searchTimeout = undefined;
       }
 
-      await performSearch();
+      await performSearch({ playResult: true });
       searchInput?.blur();
     }
   }
@@ -1397,7 +1427,7 @@
     if (searchTimeout) clearTimeout(searchTimeout);
 
     searchTimeout = setTimeout(() => {
-      void performSearch();
+      void performSearch({ playResult: false });
     }, 150);
   }
 
@@ -1511,7 +1541,10 @@
               placeholder="Search songs, artist, album..."
               on:keydown={handleSearchKeydown}
             />
-            <button class="search-button" on:click={() => performSearch()}>
+            <button
+              class="search-button"
+              on:click={() => performSearch({ playResult: true })}
+            >
               <Search size={16} />
               <span>Search</span>
             </button>
@@ -1985,7 +2018,7 @@
   {#if isMusicFolderConfirmOpen && pendingMusicFolderPath}
     <div class="settings-overlay confirm-overlay" role="presentation">
       <div
-        class="settings-modal warning-modal confirm-modal"
+        class="warning-dialog confirm-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="music-folder-confirm-title"
@@ -2025,7 +2058,7 @@
           </div>
         </div>
 
-        <div class="settings-footer">
+        <div class="warning-footer">
           <button
             class="footer-button secondary-button"
             on:click={closeMusicFolderConfirm}
@@ -2141,9 +2174,9 @@
             <div class="settings-card">
               <div class="settings-card-title">Song list limit</div>
               <div class="settings-card-text">
-                Caps how many songs can be loaded into the current list and
-                search results. Higher values show more songs but can make
-                refreshes slower.
+                Caps how many songs can be loaded into the current list when
+                filtering the search results. Higher values show more songs but
+                can make refreshes slower.
               </div>
 
               <label class="settings-field">
@@ -2848,8 +2881,23 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
-  .warning-modal {
-    width: min(560px, 100%);
+  .warning-dialog .settings-list {
+    margin-bottom: 1rem;
+  }
+
+  .warning-dialog {
+    width: min(600px, 100%);
+    max-width: 100%;
+    max-height: calc(100dvh - 2rem);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    background: #181818;
+    border: 1px solid #2d2d2d;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    padding: 1rem;
+    box-sizing: border-box;
   }
 
   .confirm-overlay {
@@ -3584,6 +3632,20 @@
     .fixed-three-list {
       height: 145px;
       max-height: 145px;
+    }
+
+    .warning-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      margin-top: 1rem;
+      flex-wrap: nowrap;
+    }
+
+    .warning-footer .footer-button {
+      width: auto;
+      min-width: 110px;
+      flex: 0 0 auto;
     }
   }
 </style>
