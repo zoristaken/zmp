@@ -5,7 +5,7 @@ use zmp_lib::{song::SongService, sqlite::SqliteDb};
 #[tokio::test]
 async fn integration_add_songs_and_list_songs() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service
@@ -24,7 +24,7 @@ async fn integration_add_songs_and_list_songs() {
 #[tokio::test]
 async fn integration_get_by_id_returns_matching_song() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service
@@ -32,7 +32,7 @@ async fn integration_get_by_id_returns_matching_song() {
         .await
         .unwrap();
 
-    let song = service.get_by_id(&service.pool, 2).await.unwrap();
+    let song = service.get_song_by_id(&service.pool, 2).await.unwrap();
     assert_eq!(song.title, "Windowlicker");
     assert_eq!(song.artist, "Aphex Twin");
     assert_eq!(song.extension, "mp4")
@@ -42,10 +42,13 @@ async fn integration_get_by_id_returns_matching_song() {
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
-    let err = service.get_by_id(&service.pool, 999).await.unwrap_err();
+    let err = service
+        .get_song_by_id(&service.pool, 999)
+        .await
+        .unwrap_err();
     assert_eq!(
         err.to_string(),
         "no rows returned by a query that expected to return at least one row"
@@ -55,7 +58,7 @@ async fn integration_get_by_id_returns_error_when_missing() {
 #[tokio::test]
 async fn integration_get_by_title_artist_returns_matching_song() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service
@@ -76,7 +79,7 @@ async fn integration_get_by_title_artist_returns_matching_song() {
 #[tokio::test]
 async fn integration_get_by_title_artist_returns_error_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     let err = service
@@ -93,7 +96,7 @@ async fn integration_get_by_title_artist_returns_error_when_missing() {
 #[tokio::test]
 async fn integration_search_by_filters_in_memory_input() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     let songs = sample_songs();
@@ -110,7 +113,7 @@ async fn integration_search_by_filters_in_memory_input() {
 #[tokio::test]
 async fn integration_search_by_honors_max_results() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     let songs = sample_songs();
@@ -122,7 +125,7 @@ async fn integration_search_by_honors_max_results() {
 #[tokio::test]
 async fn integration_search_by_db_returns_empty_when_words_are_empty() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service
@@ -137,7 +140,7 @@ async fn integration_search_by_db_returns_empty_when_words_are_empty() {
 #[tokio::test]
 async fn integration_search_by_db_finds_matching_rows() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service
@@ -157,7 +160,7 @@ async fn integration_search_by_db_finds_matching_rows() {
 #[tokio::test]
 async fn integration_search_by_db_honors_max_results() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service
@@ -175,7 +178,7 @@ async fn integration_search_by_db_honors_max_results() {
 #[tokio::test]
 async fn integration_search_by_db_alternative_finds_matching_rows() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongService::new(sqlite);
 
     service

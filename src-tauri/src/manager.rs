@@ -3,12 +3,12 @@ use std::{path::Path, sync::Mutex};
 use sqlx::{Database, Pool, Sqlite};
 
 use crate::{
-    filter::{FilterRepository, FilterService},
+    filter::FilterRepository,
     metadata::MetadataParser,
     player::Player,
     setting::{SettingRepository, SettingService},
     song::{Song, SongRepository, SongService},
-    song_filter::{SongFilterRepository, SongFilterService},
+    song_filter::SongFilterRepository,
     sqlite::SqliteDb,
 };
 pub struct AppState {
@@ -31,8 +31,6 @@ where
 {
     pub setting: SettingService<R, DB>,
     pub song: SongService<R, DB>,
-    pub filter: FilterService<R, DB>,
-    pub song_filter: SongFilterService<R, DB>,
     pub metadata_parser: MetadataParser,
     pub player: Mutex<Player>,
     pub pool: sqlx::Pool<DB>,
@@ -58,8 +56,6 @@ where
         Self {
             setting,
             song: SongService::new(repos.clone()),
-            filter: FilterService::new(repos.clone()),
-            song_filter: SongFilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Mutex::new(Player::new(Some(index), shuffle, repeat, volume)),
             pool: repos.pool().clone(),

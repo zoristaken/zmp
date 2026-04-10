@@ -6,7 +6,7 @@ use zmp_lib::sqlite::SqliteDb;
 #[tokio::test]
 async fn integration_music_folder_path_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     service
@@ -21,7 +21,7 @@ async fn integration_music_folder_path_roundtrip() {
 #[tokio::test]
 async fn integration_repeat_flag_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     assert!(!service.is_repeat_flag(&service.pool).await);
@@ -36,7 +36,7 @@ async fn integration_repeat_flag_roundtrip() {
 #[tokio::test]
 async fn integration_random_play_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     assert!(!service.is_random_play(&service.pool).await);
@@ -51,7 +51,7 @@ async fn integration_random_play_roundtrip() {
 #[tokio::test]
 async fn integration_processed_music_folder_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     assert!(!service.has_processed_music_folder(&service.pool).await);
@@ -72,7 +72,7 @@ async fn integration_processed_music_folder_roundtrip() {
 #[tokio::test]
 async fn integration_saved_volume_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     service
@@ -87,7 +87,7 @@ async fn integration_saved_volume_roundtrip() {
 #[tokio::test]
 async fn integration_saved_volume_returns_default_for_invalid_db_value() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     sqlx::query(
@@ -107,7 +107,7 @@ async fn integration_saved_volume_returns_default_for_invalid_db_value() {
 #[tokio::test]
 async fn integration_saved_search_blob_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     service
@@ -122,7 +122,7 @@ async fn integration_saved_search_blob_roundtrip() {
 #[tokio::test]
 async fn integration_keybind_roundtrips() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     service
@@ -179,7 +179,7 @@ async fn integration_keybind_roundtrips() {
 #[tokio::test]
 async fn integration_updates_existing_setting_instead_of_duplicate_insert() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SettingService::new(sqlite);
 
     service

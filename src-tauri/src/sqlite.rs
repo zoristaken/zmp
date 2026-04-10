@@ -74,7 +74,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         Ok(())
     }
 
-    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
+    async fn get_all_songs<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
@@ -202,7 +202,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         Ok(songs)
     }
 
-    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
+    async fn get_song_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
@@ -255,7 +255,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
 
         Ok(())
     }
-    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
+    async fn get_all_filters<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
@@ -283,7 +283,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
         Ok(filter)
     }
 
-    async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
+    async fn get_filter_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
@@ -342,7 +342,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         Ok(())
     }
 
-    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
+    async fn get_song_filter_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
@@ -396,7 +396,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         Ok(song_filter)
     }
 
-    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
+    async fn get_all_song_filters<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {

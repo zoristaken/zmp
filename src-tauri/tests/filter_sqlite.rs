@@ -5,7 +5,7 @@ use zmp_lib::{filter::FilterService, sqlite::SqliteDb};
 #[tokio::test]
 async fn integration_add_inserts_expected_filter() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     service.add(&service.pool, "trip-hop").await.unwrap();
@@ -17,7 +17,7 @@ async fn integration_add_inserts_expected_filter() {
 #[tokio::test]
 async fn integration_get_all_returns_exact_filters_in_order() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     service.add(&service.pool, "ambient").await.unwrap();
@@ -31,7 +31,7 @@ async fn integration_get_all_returns_exact_filters_in_order() {
 #[tokio::test]
 async fn integration_get_by_name_returns_exact_filter() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     service.add(&service.pool, "ambient").await.unwrap();
@@ -48,7 +48,7 @@ async fn integration_get_by_name_returns_exact_filter() {
 #[tokio::test]
 async fn integration_get_by_name_returns_error_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     let err = service
@@ -64,7 +64,7 @@ async fn integration_get_by_name_returns_error_when_missing() {
 #[tokio::test]
 async fn integration_get_by_id_returns_exact_filter() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     service.add(&service.pool, "ambient").await.unwrap();
@@ -79,7 +79,7 @@ async fn integration_get_by_id_returns_exact_filter() {
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     let err = service.get_by_id(&service.pool, 999).await.unwrap_err();
@@ -92,7 +92,7 @@ async fn integration_get_by_id_returns_error_when_missing() {
 #[tokio::test]
 async fn integration_add_returns_error_for_duplicate_name() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = FilterService::new(sqlite);
 
     service.add(&service.pool, "ambient").await.unwrap();

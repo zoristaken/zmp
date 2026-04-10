@@ -36,6 +36,7 @@ pub async fn setup_db_with_song_and_filters() -> SqlitePool {
     pool
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn song(
     id: i32,
     title: &str,

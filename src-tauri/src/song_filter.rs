@@ -26,10 +26,14 @@ where
     ) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send;
-    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
+    async fn get_all_song_filters<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<SongFilter>>
     where
         A: Acquire<'a, Database = DB> + Send;
-    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
+    async fn get_song_filter_by_id<'a, A>(
+        &self,
+        acquiree: A,
+        id: i32,
+    ) -> anyhow::Result<SongFilter>
     where
         A: Acquire<'a, Database = DB> + Send;
     async fn get_by_filter<'a, A>(
@@ -91,14 +95,14 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_all(acquiree).await
+        self.repo.get_all_song_filters(acquiree).await
     }
 
     pub async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<SongFilter>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_by_id(acquiree, id).await
+        self.repo.get_song_filter_by_id(acquiree, id).await
     }
 
     pub async fn get_by_filter<'a, A>(

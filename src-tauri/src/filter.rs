@@ -16,13 +16,13 @@ pub trait FilterRepository<DB> {
     async fn add<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send;
-    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
+    async fn get_all_filters<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Filter>>
     where
         A: Acquire<'a, Database = DB> + Send;
     async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = DB> + Send;
-    async fn get_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
+    async fn get_filter_by_id<'a, A>(&self, acquiree: A, filter_id: i32) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = DB> + Send;
 }
@@ -61,7 +61,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_all(acquiree).await
+        self.repo.get_all_filters(acquiree).await
     }
 
     pub async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
@@ -75,6 +75,6 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_by_id(acquiree, filter_id).await
+        self.repo.get_filter_by_id(acquiree, filter_id).await
     }
 }

@@ -28,11 +28,11 @@ where
     where
         A: Acquire<'a, Database = DB> + Send;
 
-    async fn get_all<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
+    async fn get_all_songs<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>
     where
         A: Acquire<'a, Database = DB> + Send;
 
-    async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
+    async fn get_song_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = DB> + Send;
 
@@ -103,14 +103,14 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_all(acquiree).await
+        self.repo.get_all_songs(acquiree).await
     }
 
-    pub async fn get_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
+    pub async fn get_song_by_id<'a, A>(&self, acquiree: A, id: i32) -> anyhow::Result<Song>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.get_by_id(acquiree, id).await
+        self.repo.get_song_by_id(acquiree, id).await
     }
 
     pub async fn get_by_title_artist<'a, A>(

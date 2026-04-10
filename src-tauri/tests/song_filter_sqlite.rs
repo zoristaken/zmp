@@ -5,7 +5,7 @@ use zmp_lib::{song_filter::SongFilterService, sqlite::SqliteDb};
 #[tokio::test]
 async fn integration_add_inserts_song_filter() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite.clone());
 
     service
@@ -23,7 +23,7 @@ async fn integration_add_inserts_song_filter() {
 #[tokio::test]
 async fn integration_add_multiple_inserts_all_song_filters() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     service
@@ -40,7 +40,7 @@ async fn integration_add_multiple_inserts_all_song_filters() {
 #[tokio::test]
 async fn integration_get_all_returns_all_rows() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     service
@@ -55,7 +55,7 @@ async fn integration_get_all_returns_all_rows() {
 #[tokio::test]
 async fn integration_get_by_id_returns_matching_row() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     service
@@ -73,7 +73,7 @@ async fn integration_get_by_id_returns_matching_row() {
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     let err = service.get_by_id(&service.pool, 999).await.unwrap_err();
@@ -86,7 +86,7 @@ async fn integration_get_by_id_returns_error_when_missing() {
 #[tokio::test]
 async fn integration_get_by_filter_returns_matching_rows() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite.clone());
 
     service
@@ -103,7 +103,7 @@ async fn integration_get_by_filter_returns_matching_rows() {
 #[tokio::test]
 async fn integration_get_by_filter_returns_empty_when_missing() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     service
@@ -118,7 +118,7 @@ async fn integration_get_by_filter_returns_empty_when_missing() {
 #[tokio::test]
 async fn integration_get_by_song_returns_matching_rows() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     service
@@ -135,7 +135,7 @@ async fn integration_get_by_song_returns_matching_rows() {
 #[tokio::test]
 async fn integration_get_by_song_returns_empty_when_missing() {
     let pool = setup_db_with_song_and_filters().await;
-    let sqlite = SqliteDb { pool: pool };
+    let sqlite = SqliteDb { pool };
     let service = SongFilterService::new(sqlite);
 
     service

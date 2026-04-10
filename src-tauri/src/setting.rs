@@ -36,10 +36,10 @@ pub trait SettingRepository<DB>
 where
     DB: Database,
 {
-    async fn set<'a, A>(&self, executor: A, key: &str, value: &str) -> anyhow::Result<()>
+    async fn set<'a, A>(&self, acquiree: A, key: &str, value: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send;
-    async fn get<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<Setting>
+    async fn get<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<Setting>
     where
         A: Acquire<'a, Database = DB> + Send;
 }
@@ -65,83 +65,83 @@ where
         }
     }
 
-    pub async fn get_music_folder_path<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_music_folder_path<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        Ok(self.get(executor, MUSIC_FOLDER_PATH_KEY).await?.value)
+        Ok(self.get(acquiree, MUSIC_FOLDER_PATH_KEY).await?.value)
     }
 
-    pub async fn set_music_folder_path<'a, A>(&self, executor: A, path: &str) -> anyhow::Result<()>
+    pub async fn set_music_folder_path<'a, A>(&self, acquiree: A, path: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, MUSIC_FOLDER_PATH_KEY, path).await
+        self.set(acquiree, MUSIC_FOLDER_PATH_KEY, path).await
     }
 
-    pub async fn set_repeat_flag<'a, A>(&self, executor: A, flag: bool) -> anyhow::Result<()>
+    pub async fn set_repeat_flag<'a, A>(&self, acquiree: A, flag: bool) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
         if flag {
-            self.set(executor, REPEAT_FLAG, "true").await
+            self.set(acquiree, REPEAT_FLAG, "true").await
         } else {
-            self.set(executor, REPEAT_FLAG, "false").await
+            self.set(acquiree, REPEAT_FLAG, "false").await
         }
     }
 
-    pub async fn is_repeat_flag<'a, A>(&self, executor: A) -> bool
+    pub async fn is_repeat_flag<'a, A>(&self, acquiree: A) -> bool
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, REPEAT_FLAG).await {
+        match self.get(acquiree, REPEAT_FLAG).await {
             Ok(setting) => setting.value == "true",
             Err(_) => false,
         }
     }
 
-    pub async fn get_saved_search_blob<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_saved_search_blob<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, SEARCH_BLOB).await?;
+        let setting = self.get(acquiree, SEARCH_BLOB).await?;
 
         Ok(setting.value)
     }
 
     pub async fn set_saved_search_blob<'a, A>(
         &self,
-        executor: A,
+        acquiree: A,
         search_blob: &str,
     ) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, SEARCH_BLOB, search_blob).await
+        self.set(acquiree, SEARCH_BLOB, search_blob).await
     }
 
-    pub async fn get_saved_index<'a, A>(&self, executor: A) -> usize
+    pub async fn get_saved_index<'a, A>(&self, acquiree: A) -> usize
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, INDEX_VALUE).await {
+        match self.get(acquiree, INDEX_VALUE).await {
             Ok(setting) => setting.value.parse::<usize>().unwrap_or(0),
             Err(_) => 0,
         }
     }
 
-    pub async fn set_saved_index<'a, A>(&self, executor: A, index: usize) -> anyhow::Result<()>
+    pub async fn set_saved_index<'a, A>(&self, acquiree: A, index: usize) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, INDEX_VALUE, &index.to_string()).await
+        self.set(acquiree, INDEX_VALUE, &index.to_string()).await
     }
 
-    pub async fn get_current_song_seek<'a, A>(&self, executor: A) -> usize
+    pub async fn get_current_song_seek<'a, A>(&self, acquiree: A) -> usize
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, CURRENT_SEEK_VALUE).await {
+        match self.get(acquiree, CURRENT_SEEK_VALUE).await {
             Ok(setting) => setting.value.parse::<usize>().unwrap_or(0),
             Err(_) => 0,
         }
@@ -149,21 +149,21 @@ where
 
     pub async fn set_current_song_seek<'a, A>(
         &self,
-        executor: A,
+        acquiree: A,
         value: usize,
     ) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, CURRENT_SEEK_VALUE, &value.to_string())
+        self.set(acquiree, CURRENT_SEEK_VALUE, &value.to_string())
             .await
     }
 
-    pub async fn get_saved_volume_value<'a, A>(&self, executor: A) -> rodio::Float
+    pub async fn get_saved_volume_value<'a, A>(&self, acquiree: A) -> rodio::Float
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, VOLUME_VALUE).await {
+        match self.get(acquiree, VOLUME_VALUE).await {
             Ok(setting) => setting
                 .value
                 .parse::<rodio::Float>()
@@ -174,230 +174,230 @@ where
 
     pub async fn set_saved_volume_value<'a, A>(
         &self,
-        executor: A,
+        acquiree: A,
         volume: rodio::Float,
     ) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, VOLUME_VALUE, &volume.to_string()).await
+        self.set(acquiree, VOLUME_VALUE, &volume.to_string()).await
     }
 
     pub async fn set_processed_music_folder<'a, A>(
         &self,
-        executor: A,
+        acquiree: A,
         flag: bool,
     ) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
         if flag {
-            self.set(executor, PROCESSED_MUSIC_FLAG, "true").await
+            self.set(acquiree, PROCESSED_MUSIC_FLAG, "true").await
         } else {
-            self.set(executor, PROCESSED_MUSIC_FLAG, "false").await
+            self.set(acquiree, PROCESSED_MUSIC_FLAG, "false").await
         }
     }
 
-    pub async fn has_processed_music_folder<'a, A>(&self, executor: A) -> bool
+    pub async fn has_processed_music_folder<'a, A>(&self, acquiree: A) -> bool
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, PROCESSED_MUSIC_FLAG).await {
+        match self.get(acquiree, PROCESSED_MUSIC_FLAG).await {
             Ok(setting) => setting.value == "true",
             Err(_) => false,
         }
     }
 
-    pub async fn set_settings_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_settings_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, SETTINGS_KEYBIND, key).await
+        self.set(acquiree, SETTINGS_KEYBIND, key).await
     }
 
-    pub async fn get_settings_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_settings_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, SETTINGS_KEYBIND).await?;
+        let setting = self.get(acquiree, SETTINGS_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_play_pause_flag<'a, A>(&self, executor: A, playing: bool) -> anyhow::Result<()>
+    pub async fn set_play_pause_flag<'a, A>(&self, acquiree: A, playing: bool) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
         if playing {
-            self.set(executor, PLAY_PAUSE_FLAG, "true").await
+            self.set(acquiree, PLAY_PAUSE_FLAG, "true").await
         } else {
-            self.set(executor, PLAY_PAUSE_FLAG, "false").await
+            self.set(acquiree, PLAY_PAUSE_FLAG, "false").await
         }
     }
 
-    pub async fn is_playing<'a, A>(&self, executor: A) -> bool
+    pub async fn is_playing<'a, A>(&self, acquiree: A) -> bool
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, PLAY_PAUSE_FLAG).await {
+        match self.get(acquiree, PLAY_PAUSE_FLAG).await {
             Ok(setting) => setting.value == "true",
             Err(_) => false,
         }
     }
 
-    pub async fn get_focus_search_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_focus_search_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, FOCUS_SEARCH_KEYBIND).await?;
+        let setting = self.get(acquiree, FOCUS_SEARCH_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
     pub async fn set_focus_search_keybind<'a, A>(
         &self,
-        executor: A,
+        acquiree: A,
         key: &str,
     ) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, FOCUS_SEARCH_KEYBIND, key).await
+        self.set(acquiree, FOCUS_SEARCH_KEYBIND, key).await
     }
 
-    pub async fn get_mute_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_mute_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, MUTE_KEYBIND).await?;
+        let setting = self.get(acquiree, MUTE_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_mute_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_mute_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, MUTE_KEYBIND, key).await
+        self.set(acquiree, MUTE_KEYBIND, key).await
     }
 
-    pub async fn get_repeat_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_repeat_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, REPEAT_KEYBIND).await?;
+        let setting = self.get(acquiree, REPEAT_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_repeat_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_repeat_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, REPEAT_KEYBIND, key).await
+        self.set(acquiree, REPEAT_KEYBIND, key).await
     }
 
-    pub async fn get_shuffle_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_shuffle_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, SHUFFLE_KEYBIND).await?;
+        let setting = self.get(acquiree, SHUFFLE_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_shuffle_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_shuffle_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, SHUFFLE_KEYBIND, key).await
+        self.set(acquiree, SHUFFLE_KEYBIND, key).await
     }
 
-    pub async fn set_previous_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_previous_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, PREVIOUS_KEYBIND, key).await
+        self.set(acquiree, PREVIOUS_KEYBIND, key).await
     }
 
-    pub async fn get_previous_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_previous_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, PREVIOUS_KEYBIND).await?;
+        let setting = self.get(acquiree, PREVIOUS_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_next_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_next_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, NEXT_KEYBIND, key).await
+        self.set(acquiree, NEXT_KEYBIND, key).await
     }
 
-    pub async fn get_next_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_next_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, NEXT_KEYBIND).await?;
+        let setting = self.get(acquiree, NEXT_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_play_pause_keybind<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_play_pause_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(executor, PLAY_PAUSE_KEYBIND, key).await
+        self.set(acquiree, PLAY_PAUSE_KEYBIND, key).await
     }
 
-    pub async fn get_play_pause_keybind<'a, A>(&self, executor: A) -> anyhow::Result<String>
+    pub async fn get_play_pause_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let setting = self.get(executor, PLAY_PAUSE_KEYBIND).await?;
+        let setting = self.get(acquiree, PLAY_PAUSE_KEYBIND).await?;
 
         Ok(setting.value)
     }
 
-    pub async fn set_random_play<'a, A>(&self, executor: A, flag: bool) -> anyhow::Result<()>
+    pub async fn set_random_play<'a, A>(&self, acquiree: A, flag: bool) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
         if flag {
-            self.set(executor, RANDOM_PLAY_FLAG, "true").await
+            self.set(acquiree, RANDOM_PLAY_FLAG, "true").await
         } else {
-            self.set(executor, RANDOM_PLAY_FLAG, "false").await
+            self.set(acquiree, RANDOM_PLAY_FLAG, "false").await
         }
     }
 
-    pub async fn is_random_play<'a, A>(&self, executor: A) -> bool
+    pub async fn is_random_play<'a, A>(&self, acquiree: A) -> bool
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        match self.get(executor, RANDOM_PLAY_FLAG).await {
+        match self.get(acquiree, RANDOM_PLAY_FLAG).await {
             Ok(setting) => setting.value == "true",
             Err(_) => false,
         }
     }
 
-    async fn set<'a, A>(&self, executor: A, key: &str, value: &str) -> anyhow::Result<()>
+    async fn set<'a, A>(&self, acquiree: A, key: &str, value: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.repo
-            .set(executor, key, value)
+            .set(acquiree, key, value)
             .await
             .with_context(|| format!("Failed to set (key, value): ({},{})", key, value))
     }
 
-    async fn get<'a, A>(&self, executor: A, key: &str) -> anyhow::Result<Setting>
+    async fn get<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<Setting>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.repo
-            .get(executor, key)
+            .get(acquiree, key)
             .await
             .with_context(|| format!("Failed to get key: {}", key))
     }
