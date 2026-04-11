@@ -27,6 +27,7 @@ pub fn run() {
             commands::process_music_folder,
             commands::load,
             commands::search_songs,
+            commands::preview_search_songs,
             commands::get_music_folder_path,
             commands::set_music_folder_path,
             commands::has_processed_music_folder,

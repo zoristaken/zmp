@@ -135,7 +135,9 @@
   let songRowElements: Array<HTMLDivElement | null> = [];
 
   let hasInitialized = false;
-  let lastSearchedQuery = "";
+  let lastCommittedSearchQuery = "";
+  let lastDisplayedSearchQuery = "";
+  let searchRequestVersion = 0;
 
   let searchInput: HTMLInputElement | null = null;
   let volumeSlider: HTMLInputElement | null = null;
@@ -173,6 +175,10 @@
 
   function hasMusicFolderPath(path: string): boolean {
     return path.trim().length > 0;
+  }
+
+  function normalizeSearchQuery(query: string): string {
+    return query.trim();
   }
 
   function requiresInitialSetup(): boolean {
@@ -329,7 +335,6 @@
     resetSeekUi();
 
     await refreshCurrentSong();
-    await refreshLoadedSongs();
     await refreshSavedSeek();
     await syncPlaybackState();
 
@@ -350,20 +355,42 @@
     await ensureSelectedSongIsVisible();
   }
 
+  async function commitDisplayedPreviewQueue() {
+    if (
+      songs.length === 0 ||
+      lastDisplayedSearchQuery === lastCommittedSearchQuery
+    ) {
+      return;
+    }
+
+    try {
+      await invoke<number>("search_songs", {
+        query: lastDisplayedSearchQuery,
+      });
+      lastCommittedSearchQuery = lastDisplayedSearchQuery;
+    } catch (err) {
+      console.error("Failed to commit preview search:", err);
+    }
+  }
+
   async function playSelectedSong(index: number) {
     const targetSong = songs[index];
     if (!targetSong) return;
 
-    const isAlreadyCurrentSong = currentSong?.song.id === targetSong.song.id;
+    const targetSongId = targetSong.song.id;
+    await commitDisplayedPreviewQueue();
+    const targetIndex = index;
+
+    const isAlreadyCurrentSong = currentSong?.song.id === targetSongId;
     if (isAlreadyCurrentSong) {
-      selectedIndex = index;
-      selectedSongId = targetSong.song.id;
+      selectedIndex = targetIndex;
+      selectedSongId = targetSongId;
       await ensureSelectedSongIsVisible();
       return;
     }
 
     try {
-      await invoke("play_song_at", { index });
+      await invoke("play_song_at", { index: targetIndex });
     } catch (err) {
       console.error("Failed to play selected song:", err);
     }
@@ -388,6 +415,8 @@
   }
 
   async function previous() {
+    await commitDisplayedPreviewQueue();
+
     try {
       await invoke("previous_song");
     } catch (err) {
@@ -396,6 +425,8 @@
   }
 
   async function next() {
+    await commitDisplayedPreviewQueue();
+
     try {
       await invoke("next_song");
     } catch (err) {
@@ -423,20 +454,52 @@
     }
   }
 
-  async function performSearch(options?: { playResult?: boolean }) {
+  async function performSearch(options?: {
+    playResult?: boolean;
+    commit?: boolean;
+  }) {
     const playResult = options?.playResult ?? false;
+    const shouldCommit = options?.commit ?? false;
     const previousCurrentSongId = currentSong?.song.id ?? null;
     const previousSelectedSongId = selectedSongId;
     const previousSelectedIndex = selectedIndex;
+    const normalizedQuery = normalizeSearchQuery(searchQuery);
+    const requestVersion = ++searchRequestVersion;
 
     try {
-      const count = await invoke<number>("search_songs", {
-        query: searchQuery,
-      });
+      if (shouldCommit) {
+        const previewSongs = await invoke<Song[]>("preview_search_songs", {
+          query: normalizedQuery,
+        });
 
-      searchResultCount = count;
-      lastSearchedQuery = searchQuery;
-      await refreshLoadedSongs();
+        if (requestVersion !== searchRequestVersion) return;
+
+        if (previewSongs.length === 0) {
+          songs = previewSongs;
+          searchResultCount = 0;
+          lastDisplayedSearchQuery = normalizedQuery;
+        } else {
+          const count = await invoke<number>("search_songs", {
+            query: normalizedQuery,
+          });
+
+          if (requestVersion !== searchRequestVersion) return;
+
+          searchResultCount = count;
+          lastCommittedSearchQuery = normalizedQuery;
+          lastDisplayedSearchQuery = normalizedQuery;
+          await refreshLoadedSongs();
+        }
+      } else {
+        songs = await invoke<Song[]>("preview_search_songs", {
+          query: normalizedQuery,
+        });
+
+        if (requestVersion !== searchRequestVersion) return;
+
+        searchResultCount = songs.length;
+        lastDisplayedSearchQuery = normalizedQuery;
+      }
 
       let nextSelectedIndex: number | null = null;
 
@@ -467,7 +530,7 @@
         nextSelectedIndex = previousSelectedIndex;
       }
 
-      if (playResult && nextSelectedIndex === null && count > 0) {
+      if (playResult && nextSelectedIndex === null && songs.length > 0) {
         nextSelectedIndex = 0;
       }
 
@@ -480,6 +543,7 @@
       await ensureSelectedSongIsVisible();
 
       if (
+        shouldCommit &&
         playResult &&
         nextSelectedIndex !== null &&
         songs[nextSelectedIndex]
@@ -503,7 +567,7 @@
         searchTimeout = undefined;
       }
 
-      await performSearch({ playResult: true });
+      await performSearch({ playResult: true, commit: true });
       searchInput?.blur();
     }
   }
@@ -767,7 +831,8 @@
     await refreshSetupState();
 
     searchQuery = "";
-    lastSearchedQuery = "";
+    lastCommittedSearchQuery = "";
+    lastDisplayedSearchQuery = "";
 
     const count = await invoke<number>("load");
     searchResultCount = count;
@@ -785,6 +850,7 @@
     isRepeat = savedRepeat;
     isPlaying = savedIsPlaying;
 
+    await refreshLoadedSongs();
     await refreshAllFilters();
     await handleTrackChange(initialIndex);
 
@@ -846,8 +912,10 @@
       songListLimitMessageKind = "success";
 
       if (hasInitialized && !requiresInitialSetup()) {
-        searchResultCount = await invoke<number>("search_songs", {
-          query: searchQuery,
+        await performSearch({
+          playResult: false,
+          commit:
+            normalizeSearchQuery(searchQuery) === lastCommittedSearchQuery,
         });
       }
     } catch (err) {
@@ -1423,11 +1491,14 @@
     captureAction = null;
   }
 
-  $: if (hasInitialized && searchQuery !== lastSearchedQuery) {
+  $: if (
+    hasInitialized &&
+    normalizeSearchQuery(searchQuery) !== lastDisplayedSearchQuery
+  ) {
     if (searchTimeout) clearTimeout(searchTimeout);
 
     searchTimeout = setTimeout(() => {
-      void performSearch({ playResult: false });
+      void performSearch({ playResult: false, commit: false });
     }, 150);
   }
 
@@ -1449,7 +1520,8 @@
 
         const savedSearch = await invoke<string>("get_saved_search_blob");
         searchQuery = savedSearch;
-        lastSearchedQuery = searchQuery;
+        lastCommittedSearchQuery = normalizeSearchQuery(searchQuery);
+        lastDisplayedSearchQuery = lastCommittedSearchQuery;
 
         await refreshSetupState();
 
@@ -1543,7 +1615,7 @@
             />
             <button
               class="search-button"
-              on:click={() => performSearch({ playResult: true })}
+              on:click={() => performSearch({ playResult: true, commit: true })}
             >
               <Search size={16} />
               <span>Search</span>
@@ -1831,10 +1903,6 @@
             </div>
           </div>
 
-          <div class="filter-save-message message-slot">
-            {songFilterMessage || "\u00A0"}
-          </div>
-
           <div class="filter-existing fixed-current-filters">
             <div class="filter-existing-label">Current filters</div>
 
@@ -1899,6 +1967,12 @@
         </div>
 
         <div class="settings-footer">
+          <div
+            class="filter-save-message footer-filter-message message-slot"
+            aria-live="polite"
+          >
+            {songFilterMessage || "\u00A0"}
+          </div>
           <button
             class="footer-button secondary-button"
             on:click={closeSongFilterMenu}
@@ -1965,10 +2039,6 @@
             </button>
           </div>
 
-          <div class="filter-save-message message-slot">
-            {filterLibraryMessage || "\u00A0"}
-          </div>
-
           <div class="filter-existing grow-panel">
             <div class="filter-existing-label">Saved filters</div>
 
@@ -2004,6 +2074,12 @@
         </div>
 
         <div class="settings-footer">
+          <div
+            class="filter-save-message footer-filter-message message-slot"
+            aria-live="polite"
+          >
+            {filterLibraryMessage || "\u00A0"}
+          </div>
           <button
             class="footer-button secondary-button"
             on:click={closeFilterLibraryMenu}
@@ -2923,11 +2999,11 @@
   }
 
   .song-filter-layout {
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 
   .library-filter-layout {
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .settings-header {
@@ -3205,7 +3281,7 @@
   }
 
   .filter-modal .settings-footer {
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     flex-wrap: nowrap;
     flex-direction: row;
@@ -3269,6 +3345,16 @@
     min-height: 1.25rem;
     display: flex;
     align-items: center;
+  }
+
+  .footer-filter-message {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 0.75rem;
+    justify-content: flex-start;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .filter-existing {
@@ -3622,7 +3708,7 @@
 
     .filter-modal .settings-footer {
       flex-direction: row;
-      justify-content: flex-end;
+      justify-content: space-between;
     }
 
     .filter-modal .settings-footer .footer-button {

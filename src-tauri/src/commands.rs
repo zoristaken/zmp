@@ -284,6 +284,17 @@ pub async fn search_songs(
 }
 
 #[tauri::command]
+pub async fn preview_search_songs(
+    state: tauri::State<'_, AppState>,
+    query: String,
+) -> Result<Vec<SongWithFilters>, String> {
+    let trimmed = query.trim();
+    let song_list_limit = state.zmp.setting.get_song_list_limit(&state.zmp.pool).await;
+
+    query_song_list(&state, &state.zmp.pool, trimmed, song_list_limit).await
+}
+
+#[tauri::command]
 pub async fn next_song(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
