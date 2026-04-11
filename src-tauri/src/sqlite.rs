@@ -594,12 +594,12 @@ impl SettingRepository<Sqlite> for SqliteDb {
         A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut conn = acquiree.acquire().await?;
-        Ok(sqlx::query_as::<sqlx::Sqlite, Setting>(
-            "SELECT id, key, value FROM setting WHERE key = ?",
+        Ok(
+            sqlx::query_as::<sqlx::Sqlite, Setting>("SELECT key, value FROM setting WHERE key = ?")
+                .bind(key)
+                .fetch_one(&mut *conn)
+                .await?,
         )
-        .bind(key)
-        .fetch_one(&mut *conn)
-        .await?)
     }
 }
 

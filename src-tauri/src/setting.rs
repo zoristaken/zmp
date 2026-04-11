@@ -28,7 +28,6 @@ pub const DEFAULT_SONG_LIST_LIMIT: i32 = 10_000;
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone)]
 pub struct Setting {
-    pub id: i32,
     pub key: String,
     pub value: String,
 }

@@ -31,10 +31,8 @@ CREATE TABLE IF NOT EXISTS song_filter
 
 CREATE TABLE IF NOT EXISTS setting
 (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    key     TEXT NOT NULL,
-    value   TEXT NOT NULL,
-    UNIQUE(key)
+    key     TEXT PRIMARY KEY,
+    value   TEXT NOT NULL
 );
 
 
