@@ -257,6 +257,10 @@ impl Player {
     pub fn is_paused(&self) -> bool {
         self.player.is_paused()
     }
+
+    pub fn current_song_id(&self) -> anyhow::Result<Option<i32>> {
+        Ok(self.current_song().map(|song| song.song.id))
+    }
 }
 
 #[cfg(test)]

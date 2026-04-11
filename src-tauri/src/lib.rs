@@ -7,6 +7,7 @@ use crate::{
 
 mod commands;
 mod config;
+pub mod errors;
 pub mod filter;
 mod manager;
 pub mod metadata;

@@ -144,6 +144,28 @@ where
             .await
     }
 
+    pub async fn query_song_list<'a, A>(
+        &self,
+        acquiree: A,
+        query: &str,
+        max_results: i32,
+        pinned_song_id: Option<i32>,
+    ) -> anyhow::Result<Vec<SongWithFilters>>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let trimmed = query.trim();
+
+        if trimmed.is_empty() {
+            self.list_songs_with_filters(acquiree, max_results, pinned_song_id)
+                .await
+        } else {
+            let words: Vec<&str> = trimmed.split_whitespace().collect();
+            self.search_by_db_with_filters(acquiree, &words, max_results)
+                .await
+        }
+    }
+
     pub async fn search_by_db_with_filters<'a, A>(
         &self,
         acquiree: A,

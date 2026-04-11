@@ -112,6 +112,41 @@ where
         self.set(acquiree, SEARCH_BLOB, search_blob).await
     }
 
+    pub async fn persist_started_track(&self, current_index: Option<usize>) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        self.persist_started_track_in(&mut tx, current_index)
+            .await?;
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn persist_queue_sync(
+        &self,
+        current_index: Option<usize>,
+        cleared_current_song: bool,
+    ) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        self.persist_queue_sync_in(&mut tx, current_index, cleared_current_song)
+            .await?;
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn reset_library_state(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+    ) -> anyhow::Result<()> {
+        self.set_saved_search_blob(&mut *tx, "").await?;
+        self.set_saved_index(&mut *tx, 0).await?;
+        self.set_current_song_seek(&mut *tx, 0).await?;
+        self.set_play_pause_flag(&mut *tx, false).await?;
+        self.set_processed_music_folder(&mut *tx, true).await?;
+
+        Ok(())
+    }
+
     pub async fn get_song_list_limit<'a, A>(&self, acquiree: A) -> i32
     where
         A: Acquire<'a, Database = DB> + Send,
@@ -362,6 +397,37 @@ where
         self.get_bool(acquiree, RANDOM_PLAY_FLAG).await
     }
 
+    async fn persist_started_track_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        current_index: Option<usize>,
+    ) -> anyhow::Result<()> {
+        self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
+            .await?;
+        self.set_current_song_seek(&mut *tx, 0).await?;
+        self.set_play_pause_flag(&mut *tx, current_index.is_some())
+            .await?;
+
+        Ok(())
+    }
+
+    async fn persist_queue_sync_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        current_index: Option<usize>,
+        cleared_current_song: bool,
+    ) -> anyhow::Result<()> {
+        self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
+            .await?;
+
+        if cleared_current_song {
+            self.set_current_song_seek(&mut *tx, 0).await?;
+            self.set_play_pause_flag(&mut *tx, false).await?;
+        }
+
+        Ok(())
+    }
+
     async fn set<'a, A>(&self, acquiree: A, key: &str, value: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
@@ -402,5 +468,79 @@ where
             .get(acquiree, key)
             .await
             .with_context(|| format!("Failed to get key: {}", key))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::{Sqlite, SqlitePool};
+
+    use crate::{setting::SettingService, sqlite::SqliteDb};
+
+    async fn setup_setting_service() -> SettingService<SqliteDb, Sqlite> {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        SettingService::new(SqliteDb { pool })
+    }
+
+    #[tokio::test]
+    async fn persist_started_track_resets_seek_and_marks_playing() {
+        let setting = setup_setting_service().await;
+
+        setting
+            .set_current_song_seek(&setting.pool, 27)
+            .await
+            .unwrap();
+        setting
+            .set_play_pause_flag(&setting.pool, false)
+            .await
+            .unwrap();
+
+        setting.persist_started_track(Some(3)).await.unwrap();
+
+        assert_eq!(setting.get_saved_index(&setting.pool).await, 3);
+        assert_eq!(setting.get_current_song_seek(&setting.pool).await, 0);
+        assert!(setting.is_playing(&setting.pool).await);
+    }
+
+    #[tokio::test]
+    async fn persist_queue_sync_clears_playback_state_when_current_song_disappears() {
+        let setting = setup_setting_service().await;
+
+        setting
+            .set_current_song_seek(&setting.pool, 91)
+            .await
+            .unwrap();
+        setting
+            .set_play_pause_flag(&setting.pool, true)
+            .await
+            .unwrap();
+
+        setting.persist_queue_sync(None, true).await.unwrap();
+
+        assert_eq!(setting.get_saved_index(&setting.pool).await, 0);
+        assert_eq!(setting.get_current_song_seek(&setting.pool).await, 0);
+        assert!(!setting.is_playing(&setting.pool).await);
+    }
+
+    #[tokio::test]
+    async fn persist_queue_sync_preserves_seek_and_play_flag_when_song_is_still_selected() {
+        let setting = setup_setting_service().await;
+
+        setting
+            .set_current_song_seek(&setting.pool, 42)
+            .await
+            .unwrap();
+        setting
+            .set_play_pause_flag(&setting.pool, true)
+            .await
+            .unwrap();
+
+        setting.persist_queue_sync(Some(1), false).await.unwrap();
+
+        assert_eq!(setting.get_saved_index(&setting.pool).await, 1);
+        assert_eq!(setting.get_current_song_seek(&setting.pool).await, 42);
+        assert!(setting.is_playing(&setting.pool).await);
     }
 }
