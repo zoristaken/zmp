@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount, tick } from "svelte";
   import {
@@ -133,6 +134,7 @@
   let playbackInterval: ReturnType<typeof setInterval> | undefined;
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
   let songRowElements: Array<HTMLDivElement | null> = [];
+  let appShellElement: HTMLDivElement | null = null;
 
   let hasInitialized = false;
   let lastCommittedSearchQuery = "";
@@ -230,6 +232,17 @@
     return year > 0 ? String(year) : "—";
   }
 
+  function compareFilters(left: Filter, right: Filter): number {
+    return (
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) ||
+      left.id - right.id
+    );
+  }
+
+  function sortFilters(filters: Filter[]): Filter[] {
+    return [...filters].sort(compareFilters);
+  }
+
   function stopPlaybackTicker() {
     if (playbackInterval) {
       clearInterval(playbackInterval);
@@ -263,7 +276,7 @@
 
   async function refreshAllFilters() {
     try {
-      allFilters = await invoke<Filter[]>("get_filters");
+      allFilters = sortFilters(await invoke<Filter[]>("get_filters"));
     } catch (err) {
       console.error("Failed to load filters:", err);
       allFilters = [];
@@ -329,6 +342,13 @@
   }
 
   async function handleTrackChange(newIndex: number | null) {
+    const previousCurrentSongId = currentSong?.song.id ?? null;
+    const previousSelectedSongId = selectedSongId;
+    const previousSelectedIndex = selectedIndex;
+    const shouldPreserveViewport =
+      (isSongFilterMenuOpen || isFilterLibraryMenuOpen) &&
+      previousCurrentSongId !== null;
+
     selectedIndex = newIndex;
 
     stopPlaybackTicker();
@@ -350,6 +370,25 @@
     } else {
       selectedSongId = null;
       selectedIndex = null;
+    }
+
+    const currentSongId = currentSong?.song.id ?? null;
+    if (shouldPreserveViewport && currentSongId === previousCurrentSongId) {
+      const restoredIndex =
+        previousSelectedSongId === null
+          ? -1
+          : songs.findIndex((song) => song.song.id === previousSelectedSongId);
+
+      selectedSongId = previousSelectedSongId;
+      selectedIndex =
+        restoredIndex >= 0
+          ? restoredIndex
+          : previousSelectedIndex !== null &&
+              previousSelectedIndex >= 0 &&
+              previousSelectedIndex < songs.length
+            ? previousSelectedIndex
+            : null;
+      return;
     }
 
     await ensureSelectedSongIsVisible();
@@ -815,6 +854,9 @@
   function closeMusicFolderConfirm() {
     isMusicFolderConfirmOpen = false;
     pendingMusicFolderPath = null;
+    queueMicrotask(() => {
+      focusAppShellForShortcuts();
+    });
   }
 
   async function applyMusicFolderSelection(folderPath: string) {
@@ -948,6 +990,9 @@
 
     isSettingsOpen = false;
     captureAction = null;
+    queueMicrotask(() => {
+      focusAppShellForShortcuts();
+    });
   }
 
   function toggleSettings() {
@@ -1216,6 +1261,9 @@
     songFilterMessage = "";
     isAssigningSongFilter = false;
     isRemovingSongFilter = false;
+    queueMicrotask(() => {
+      focusAppShellForShortcuts();
+    });
   }
 
   function openFilterLibraryMenu() {
@@ -1230,14 +1278,19 @@
     filterLibraryMessage = "";
     isSavingGlobalFilter = false;
     isRemovingGlobalFilter = false;
+    queueMicrotask(() => {
+      focusAppShellForShortcuts();
+    });
   }
 
   function mapSongFiltersToFilters(songFilters: SongFilter[]): Filter[] {
-    return songFilters
-      .map((songFilter) =>
-        allFilters.find((filter) => filter.id === songFilter.filter_id),
-      )
-      .filter((filter): filter is Filter => Boolean(filter));
+    return sortFilters(
+      songFilters
+        .map((songFilter) =>
+          allFilters.find((filter) => filter.id === songFilter.filter_id),
+        )
+        .filter((filter): filter is Filter => Boolean(filter)),
+    );
   }
 
   function setSongFilterLinksForTarget(songFilters: SongFilter[]) {
@@ -1245,21 +1298,23 @@
   }
 
   function updateSongFiltersLocally(songId: number, filters: Filter[]) {
+    const sortedFilters = sortFilters(filters);
+
     songs = songs.map((entry) =>
-      entry.song.id === songId ? { ...entry, filters } : entry,
+      entry.song.id === songId ? { ...entry, filters: sortedFilters } : entry,
     );
 
     if (currentSong?.song.id === songId) {
       currentSong = {
         ...currentSong,
-        filters,
+        filters: sortedFilters,
       };
     }
 
     if (songFilterTargetSong?.song.id === songId) {
       songFilterTargetSong = {
         ...songFilterTargetSong,
-        filters,
+        filters: sortedFilters,
       };
     }
   }
@@ -1418,7 +1473,7 @@
       }
 
       const savedFilters = await invoke<Filter[]>("get_filters");
-      allFilters = savedFilters;
+      allFilters = sortFilters(savedFilters);
 
       const wasSaved = savedFilters.some(
         (filter) => filter.name.toLowerCase() === trimmed.toLowerCase(),
@@ -1460,7 +1515,7 @@
         throw new Error("Removed filter still exists after delete.");
       }
 
-      allFilters = savedFilters;
+      allFilters = sortFilters(savedFilters);
       removeFilterFromAllSongsLocally(filter.id);
       filterLibraryMessage = `Removed "${filter.name}".`;
     } catch (err) {
@@ -1482,7 +1537,24 @@
     if (!song) return [];
 
     const usedIds = new Set(song.filters.map((filter) => filter.id));
-    return allFilters.filter((filter) => !usedIds.has(filter.id));
+    return sortFilters(allFilters.filter((filter) => !usedIds.has(filter.id)));
+  }
+
+  function focusAppShellForShortcuts() {
+    if (!appShellElement) return;
+
+    const activeElement = document.activeElement;
+    const isEditable =
+      activeElement instanceof HTMLInputElement ||
+      activeElement instanceof HTMLTextAreaElement ||
+      activeElement instanceof HTMLSelectElement ||
+      (activeElement instanceof HTMLElement && activeElement.isContentEditable);
+
+    if (isEditable) {
+      return;
+    }
+
+    appShellElement.focus({ preventScroll: true });
   }
 
   $: if (hasLoadedSetupState && isInitialSetupRequired) {
@@ -1504,11 +1576,22 @@
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
+    let unlistenFocusChanged: (() => void) | undefined;
 
     window.addEventListener("keydown", handleGlobalKeydown);
 
     void (async () => {
       try {
+        unlistenFocusChanged = await getCurrentWindow().onFocusChanged(
+          ({ payload: focused }) => {
+            if (!focused) return;
+
+            queueMicrotask(() => {
+              focusAppShellForShortcuts();
+            });
+          },
+        );
+
         await loadKeybinds();
 
         unlisten = await listen<TrackChangedPayload>(
@@ -1558,6 +1641,7 @@
         await refreshSavedSeek();
         await handleTrackChange(initialIndex);
         await syncPlaybackState();
+        focusAppShellForShortcuts();
 
         hasInitialized = true;
       } catch (err) {
@@ -1572,11 +1656,12 @@
       if (searchTimeout) clearTimeout(searchTimeout);
       if (playbackInterval) clearInterval(playbackInterval);
       if (unlisten) unlisten();
+      if (unlistenFocusChanged) unlistenFocusChanged();
     };
   });
 </script>
 
-<div class="app-shell">
+<div class="app-shell" bind:this={appShellElement} tabindex="-1">
   <div
     class="app-content"
     class:app-disabled={isSettingsOpen ||
