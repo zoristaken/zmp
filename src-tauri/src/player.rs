@@ -6,6 +6,22 @@ use rodio::Decoder;
 
 use crate::song_query::SongWithFilters;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueSyncResult {
+    pub current_index: Option<usize>,
+    pub cleared_current_song: bool,
+}
+
+fn resolve_queue_sync(current_song_id: Option<i32>, songs: &[SongWithFilters]) -> QueueSyncResult {
+    let current_index =
+        current_song_id.and_then(|song_id| songs.iter().position(|song| song.song.id == song_id));
+
+    QueueSyncResult {
+        current_index,
+        cleared_current_song: current_song_id.is_some() && current_index.is_none(),
+    }
+}
+
 pub struct Player {
     _stream_handle: rodio::MixerDeviceSink,
     player: rodio::Player,
@@ -58,7 +74,7 @@ impl Player {
     ) -> anyhow::Result<Option<usize>> {
         self.set_shuffle(is_shuffle);
         self.set_repeat(is_repeat);
-        self.set_queue(songs)?;
+        let _ = self.set_queue(songs)?;
 
         if !self.queue.is_empty() {
             let index = saved_index.min(self.queue.len() - 1);
@@ -110,7 +126,7 @@ impl Player {
         Ok(())
     }
 
-    pub fn set_queue(&mut self, songs: Vec<SongWithFilters>) -> anyhow::Result<()> {
+    pub fn set_queue(&mut self, songs: Vec<SongWithFilters>) -> anyhow::Result<QueueSyncResult> {
         let current_song_id = self
             .current_index
             .and_then(|i| self.queue.get(i))
@@ -119,18 +135,25 @@ impl Player {
         self.queue = songs;
 
         if self.queue.is_empty() {
+            let sync_result = QueueSyncResult {
+                current_index: None,
+                cleared_current_song: current_song_id.is_some(),
+            };
             self.current_index = None;
             self.player.clear();
-            return Ok(());
+            return Ok(sync_result);
         }
 
-        //set the current index to the previous song index if existed
-        //this is needed because the list of songs can change, in which case
-        //the current index of the previous song can be different
-        self.current_index = current_song_id
-            .and_then(|song_id| self.queue.iter().position(|song| song.song.id == song_id));
+        // Keep the current track selected when the queue changes so playback
+        // doesn't drift to a different song just because the list was rebuilt.
+        let sync_result = resolve_queue_sync(current_song_id, &self.queue);
+        self.current_index = sync_result.current_index;
 
-        Ok(())
+        if sync_result.cleared_current_song {
+            self.player.clear();
+        }
+
+        Ok(sync_result)
     }
 
     pub fn play_song_at(
@@ -233,5 +256,69 @@ impl Player {
 
     pub fn is_paused(&self) -> bool {
         self.player.is_paused()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{song::Song, song_query::SongWithFilters};
+
+    use super::{resolve_queue_sync, QueueSyncResult};
+
+    fn song(id: i32) -> SongWithFilters {
+        SongWithFilters {
+            song: Song {
+                id,
+                title: format!("song-{id}"),
+                artist: "artist".to_string(),
+                release_year: 1999,
+                album: "album".to_string(),
+                remix: String::new(),
+                search_blob: format!("song-{id}"),
+                file_path: format!("/music/{id}.mp3"),
+                duration: 180,
+                extension: "mp3".to_string(),
+            },
+            filters: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_queue_sync_retargets_the_current_song_when_it_moves() {
+        let result = resolve_queue_sync(Some(2), &[song(1), song(3), song(2)]);
+
+        assert_eq!(
+            result,
+            QueueSyncResult {
+                current_index: Some(2),
+                cleared_current_song: false,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_queue_sync_reports_when_the_current_song_disappears() {
+        let result = resolve_queue_sync(Some(7), &[song(1), song(2), song(3)]);
+
+        assert_eq!(
+            result,
+            QueueSyncResult {
+                current_index: None,
+                cleared_current_song: true,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_queue_sync_does_not_clear_when_nothing_was_selected() {
+        let result = resolve_queue_sync(None, &[song(1), song(2)]);
+
+        assert_eq!(
+            result,
+            QueueSyncResult {
+                current_index: None,
+                cleared_current_song: false,
+            }
+        );
     }
 }

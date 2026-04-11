@@ -38,7 +38,6 @@ async fn integration_get_by_id_returns_matching_song() {
     assert_eq!(song.extension, "mp4")
 }
 
-//TODO: PROPER IMPLEMENTATION WITH CUSTOM ERRORS
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db().await;
@@ -75,7 +74,6 @@ async fn integration_get_by_title_artist_returns_matching_song() {
     assert_eq!(song.release_year, 1998);
 }
 
-//TODO: PROPER IMPLEMENTATION WITH CUSTOM ERRORS
 #[tokio::test]
 async fn integration_get_by_title_artist_returns_error_when_missing() {
     let pool = setup_db().await;

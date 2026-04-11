@@ -147,6 +147,25 @@ async fn integration_song_list_limit_roundtrip() {
 }
 
 #[tokio::test]
+async fn integration_song_list_limit_rejects_non_positive_values() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = SettingService::new(sqlite);
+
+    let zero_error = service
+        .set_song_list_limit(&service.pool, 0)
+        .await
+        .unwrap_err();
+    let negative_error = service
+        .set_song_list_limit(&service.pool, -25)
+        .await
+        .unwrap_err();
+
+    assert!(zero_error.to_string().contains("greater than 0"));
+    assert!(negative_error.to_string().contains("greater than 0"));
+}
+
+#[tokio::test]
 async fn integration_keybind_roundtrips() {
     let pool = setup_db().await;
     let sqlite = SqliteDb { pool };

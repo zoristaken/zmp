@@ -66,7 +66,6 @@ async fn integration_get_by_id_returns_matching_row() {
     assert_eq!(item.filter_id, 1);
 }
 
-//TODO: PROPER IMPLEMENTATION WITH CUSTOM ERRORS
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db_with_song_and_filters().await;

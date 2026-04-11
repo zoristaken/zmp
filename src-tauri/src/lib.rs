@@ -11,6 +11,7 @@ pub mod filter;
 mod manager;
 pub mod metadata;
 pub mod player;
+mod search_blob;
 pub mod setting;
 pub mod song;
 pub mod song_filter;

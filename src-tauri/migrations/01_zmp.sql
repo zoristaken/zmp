@@ -36,3 +36,13 @@ CREATE TABLE IF NOT EXISTS setting
     value   TEXT NOT NULL,
     UNIQUE(key)
 );
+
+
+CREATE INDEX IF NOT EXISTS idx_song_sort_order
+    ON song (title, artist, album, release_year, id);
+
+CREATE INDEX IF NOT EXISTS idx_song_filter_filter_id_id
+    ON song_filter (filter_id, id);
+
+CREATE INDEX IF NOT EXISTS idx_song_filter_song_id_id
+    ON song_filter (song_id, id);

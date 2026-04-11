@@ -66,7 +66,10 @@ async fn integration_list_songs_with_filters_preserves_title_order_and_includes_
     let sqlite = SqliteDb { pool };
     let service = SongQueryService::new(sqlite.clone());
 
-    let songs = service.list_songs_with_filters(&sqlite.pool).await.unwrap();
+    let songs = service
+        .list_songs_with_filters(&sqlite.pool, 10, None)
+        .await
+        .unwrap();
 
     assert_eq!(songs.len(), 3);
     assert_eq!(songs[0].song.title, "Roygbiv");
@@ -77,6 +80,41 @@ async fn integration_list_songs_with_filters_preserves_title_order_and_includes_
     assert_eq!(songs[1].filters.len(), 2);
     assert_eq!(songs[1].filters[0].name, "ambient");
     assert_eq!(songs[1].filters[1].name, "favorites");
+}
+
+#[tokio::test]
+async fn integration_list_songs_with_filters_limit_keeps_all_filters_for_selected_songs() {
+    let pool = setup_db_with_query_fixture().await;
+    let sqlite = SqliteDb { pool };
+    let service = SongQueryService::new(sqlite.clone());
+
+    let songs = service
+        .list_songs_with_filters(&sqlite.pool, 2, None)
+        .await
+        .unwrap();
+
+    assert_eq!(songs.len(), 2);
+    assert_eq!(songs[0].song.title, "Roygbiv");
+    assert_eq!(songs[1].song.title, "Teardrop");
+    assert_eq!(songs[1].filters.len(), 2);
+    assert_eq!(songs[1].filters[0].name, "ambient");
+    assert_eq!(songs[1].filters[1].name, "favorites");
+}
+
+#[tokio::test]
+async fn integration_list_songs_with_filters_includes_pinned_song_beyond_limit() {
+    let pool = setup_db_with_query_fixture().await;
+    let sqlite = SqliteDb { pool };
+    let service = SongQueryService::new(sqlite.clone());
+
+    let songs = service
+        .list_songs_with_filters(&sqlite.pool, 1, Some(2))
+        .await
+        .unwrap();
+
+    assert_eq!(songs.len(), 2);
+    assert_eq!(songs[0].song.title, "Roygbiv");
+    assert_eq!(songs[1].song.title, "Windowlicker");
 }
 
 #[tokio::test]
@@ -94,4 +132,22 @@ async fn integration_search_by_db_with_filters_respects_limit_and_returns_attach
     assert_eq!(songs[0].song.title, "Roygbiv");
     assert_eq!(songs[0].filters.len(), 1);
     assert_eq!(songs[0].filters[0].name, "ambient");
+}
+
+#[tokio::test]
+async fn integration_search_by_db_with_filters_limit_does_not_drop_extra_filter_rows() {
+    let pool = setup_db_with_query_fixture().await;
+    let sqlite = SqliteDb { pool };
+    let service = SongQueryService::new(sqlite.clone());
+
+    let songs = service
+        .search_by_db_with_filters(&sqlite.pool, &["teardrop"], 1)
+        .await
+        .unwrap();
+
+    assert_eq!(songs.len(), 1);
+    assert_eq!(songs[0].song.title, "Teardrop");
+    assert_eq!(songs[0].filters.len(), 2);
+    assert_eq!(songs[0].filters[0].name, "ambient");
+    assert_eq!(songs[0].filters[1].name, "favorites");
 }

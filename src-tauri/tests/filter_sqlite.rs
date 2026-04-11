@@ -44,7 +44,6 @@ async fn integration_get_by_name_returns_exact_filter() {
     assert_eq!(actual, filter(2, "electronic"));
 }
 
-//TODO: PROPER IMPLEMENTATION WITH CUSTOM ERRORS
 #[tokio::test]
 async fn integration_get_by_name_returns_error_when_missing() {
     let pool = setup_db().await;
@@ -75,7 +74,6 @@ async fn integration_get_by_id_returns_exact_filter() {
     assert_eq!(actual, filter(3, "favorites"));
 }
 
-//TODO: PROPER IMPLEMENTATION WITH CUSTOM ERRORS
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db().await;
@@ -100,4 +98,15 @@ async fn integration_add_returns_error_for_duplicate_name() {
     let err = service.add(&service.pool, "ambient").await.unwrap_err();
     let msg = format!("{err:#}");
     assert!(msg.contains("failed to insert filter") || msg.contains("UNIQUE"));
+}
+
+#[tokio::test]
+async fn integration_remove_returns_false_when_filter_is_missing() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = FilterService::new(sqlite);
+
+    let removed = service.remove(&service.pool, 999).await.unwrap();
+
+    assert!(!removed);
 }

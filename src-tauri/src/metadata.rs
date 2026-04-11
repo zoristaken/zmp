@@ -1,3 +1,4 @@
+use crate::search_blob::build_search_blob;
 use crate::song::Song;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +21,6 @@ struct SongMetadata {
     artist: String,
     album: Option<String>,
     year: Option<i32>,
-    genre: Option<String>,
     path: String,
     duration: u64,
     remix: Option<String>,
@@ -45,7 +45,6 @@ impl MetadataParser {
             artist: String::new(),
             album: None,
             year: None,
-            genre: None,
             remix: None,
             duration: 0,
             path: file_path.to_string_lossy().to_string(),
@@ -67,7 +66,6 @@ impl MetadataParser {
         song.album = tag.album().map(|s| s.into_owned());
         song.artist = tag.artist().map(|s| s.into_owned()).unwrap_or_default();
         song.title = tag.title().map(|s| s.into_owned()).unwrap_or_default();
-        song.genre = tag.genre().map(|s| s.into_owned());
         song.remix = tag.get_string(ItemKey::Remixer).map(|s| s.to_string());
         song.year = Some(tag.date().unwrap_or_default().year.into());
         song.duration = tagged_file.properties().duration().as_secs();
@@ -131,18 +129,13 @@ impl MetadataParser {
                             let m_release_year = metadata.year.unwrap_or_default();
                             let m_remix = metadata.remix.unwrap_or_default();
 
-                            let search_blob = [
+                            let search_blob = build_search_blob([
                                 m_title.as_str(),
                                 m_artist.as_str(),
                                 &m_album,
                                 &m_release_year.to_string(),
                                 m_remix.as_str(),
-                            ]
-                            .into_iter()
-                            .filter(|s| !s.is_empty() && *s != "0" && *s != "-")
-                            .map(|s| s.trim().to_lowercase())
-                            .collect::<Vec<_>>()
-                            .join(" ");
+                            ]);
 
                             songs.push(Song {
                                 id: 0,

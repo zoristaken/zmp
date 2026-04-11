@@ -77,6 +77,11 @@ pub fn group_rows(rows: Vec<SongWithFilterRow>) -> Vec<SongWithFilters> {
         }
     }
 
+    for song in &mut grouped {
+        song.filters
+            .sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
+    }
+
     grouped
 }
 
@@ -88,6 +93,8 @@ where
     async fn list_songs_with_filters<'a, A>(
         &self,
         acquiree: A,
+        max_results: i32,
+        pinned_song_id: Option<i32>,
     ) -> anyhow::Result<Vec<SongWithFilters>>
     where
         A: Acquire<'a, Database = DB> + Send;
@@ -126,11 +133,15 @@ where
     pub async fn list_songs_with_filters<'a, A>(
         &self,
         acquiree: A,
+        max_results: i32,
+        pinned_song_id: Option<i32>,
     ) -> anyhow::Result<Vec<SongWithFilters>>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.list_songs_with_filters(acquiree).await
+        self.repo
+            .list_songs_with_filters(acquiree, max_results, pinned_song_id)
+            .await
     }
 
     pub async fn search_by_db_with_filters<'a, A>(

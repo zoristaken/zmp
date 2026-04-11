@@ -10,12 +10,153 @@ use std::str::FromStr;
 use crate::{
     filter::{Filter, FilterRepository},
     manager::HasPool,
+    search_blob::build_search_blob,
     setting::{Setting, SettingRepository},
     song::{Song, SongRepository},
     song_filter::{SongFilter, SongFilterRepository},
     song_mutation::SongMutationRepository,
     song_query::{group_rows, SongQueryRepository, SongWithFilterRow, SongWithFilters},
 };
+
+const SONG_SORT_ORDER: &str = "s.title, s.artist, s.album, s.release_year, s.id";
+
+async fn fetch_song_rows_with_filters<'a, A>(
+    acquiree: A,
+    words: &[&str],
+    max_results: i32,
+    pinned_song_id: Option<i32>,
+) -> anyhow::Result<Vec<SongWithFilters>>
+where
+    A: Acquire<'a, Database = Sqlite> + Send,
+{
+    if max_results <= 0 {
+        return Ok(vec![]);
+    }
+
+    let mut conn = acquiree.acquire().await?;
+    let mut query = String::from(
+        r#"
+        WITH limited_songs AS (
+            SELECT
+                s.id,
+                s.title,
+                s.artist,
+                s.release_year,
+                s.album,
+                s.remix,
+                s.search_blob,
+                s.file_path,
+                s.duration,
+                s.extension
+            FROM song s
+        "#,
+    );
+
+    if !words.is_empty() {
+        query.push_str(" WHERE ");
+        push_search_blob_conditions(&mut query, words);
+    }
+
+    query.push_str(" ORDER BY ");
+    query.push_str(SONG_SORT_ORDER);
+    query.push_str(
+        r#"
+            LIMIT ?
+        ),
+        selected_songs AS (
+            SELECT * FROM limited_songs
+        "#,
+    );
+
+    if pinned_song_id.is_some() {
+        query.push_str(
+            r#"
+            UNION ALL
+            SELECT
+                s.id,
+                s.title,
+                s.artist,
+                s.release_year,
+                s.album,
+                s.remix,
+                s.search_blob,
+                s.file_path,
+                s.duration,
+                s.extension
+            FROM song s
+            WHERE s.id = ?
+            "#,
+        );
+
+        if !words.is_empty() {
+            query.push_str(" AND ");
+            push_search_blob_conditions(&mut query, words);
+        }
+
+        query.push_str(
+            r#"
+            AND NOT EXISTS (
+                SELECT 1
+                FROM limited_songs limited
+                WHERE limited.id = s.id
+            )
+            "#,
+        );
+    }
+
+    query.push_str(
+        r#"
+        )
+        SELECT
+            s.id,
+            s.title,
+            s.artist,
+            s.release_year,
+            s.album,
+            s.remix,
+            s.search_blob,
+            s.file_path,
+            s.duration,
+            s.extension,
+            f.id AS filter_id,
+            f.name AS filter_name
+        FROM selected_songs s
+        LEFT JOIN song_filter sf ON sf.song_id = s.id
+        LEFT JOIN filter f ON f.id = sf.filter_id
+        ORDER BY
+        "#,
+    );
+    query.push_str(SONG_SORT_ORDER);
+
+    let mut built = sqlx::query_as::<sqlx::Sqlite, SongWithFilterRow>(&query);
+
+    for word in words {
+        built = built.bind(format!("%{}%", word));
+    }
+
+    built = built.bind(max_results);
+
+    if let Some(pinned_song_id) = pinned_song_id {
+        built = built.bind(pinned_song_id);
+
+        for word in words {
+            built = built.bind(format!("%{}%", word));
+        }
+    }
+
+    let rows = built.fetch_all(&mut *conn).await?;
+    Ok(group_rows(rows))
+}
+
+fn push_search_blob_conditions(query: &mut String, words: &[&str]) {
+    for (i, _) in words.iter().enumerate() {
+        if i > 0 {
+            query.push_str(" AND ");
+        }
+
+        query.push_str("s.search_blob LIKE ?");
+    }
+}
 
 #[derive(Clone)]
 pub struct SqliteDb {
@@ -114,7 +255,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let songs = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song ORDER BY id"
             )
             .fetch_all(conn)
             .await?;
@@ -190,7 +331,7 @@ impl SongRepository<Sqlite> for SqliteDb {
         }
         qb.push(")");
 
-        qb.push(" LIMIT ");
+        qb.push(" ORDER BY title, artist, album, release_year, id LIMIT ");
         qb.push_bind(max_results);
 
         let conn = &mut *acquiree.acquire().await?;
@@ -224,7 +365,7 @@ impl SongRepository<Sqlite> for SqliteDb {
             }
         }
 
-        qb.push(" LIMIT ");
+        qb.push(" ORDER BY title, artist, album, release_year, id LIMIT ");
         qb.push_bind(max_results);
 
         let conn = &mut *acquiree.acquire().await?;
@@ -293,9 +434,10 @@ impl FilterRepository<Sqlite> for SqliteDb {
         A: Acquire<'a, Database = Sqlite> + Send,
     {
         let conn = &mut *acquiree.acquire().await?;
-        let filter = sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter")
-            .fetch_all(conn)
-            .await?;
+        let filter =
+            sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter ORDER BY id")
+                .fetch_all(conn)
+                .await?;
 
         Ok(filter)
     }
@@ -343,7 +485,7 @@ impl FilterRepository<Sqlite> for SqliteDb {
             .await;
 
         match result {
-            Ok(_) => Ok(true),
+            Ok(result) => Ok(result.rows_affected() > 0),
             Err(_) => Ok(false),
         }
     }
@@ -385,7 +527,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
             .await;
 
         match result {
-            Ok(_) => Ok(true),
+            Ok(result) => Ok(result.rows_affected() > 0),
             Err(_) => Ok(false),
         }
     }
@@ -442,7 +584,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
-            "SELECT id, song_id, filter_id FROM song_filter WHERE filter_id = ?",
+            "SELECT id, song_id, filter_id FROM song_filter WHERE filter_id = ? ORDER BY id",
         )
         .bind(filter_id)
         .fetch_all(conn)
@@ -459,7 +601,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
-            "SELECT id, song_id, filter_id FROM song_filter WHERE song_id = ?",
+            "SELECT id, song_id, filter_id FROM song_filter WHERE song_id = ? ORDER BY id",
         )
         .bind(song_id)
         .fetch_all(conn)
@@ -475,7 +617,7 @@ impl SongFilterRepository<Sqlite> for SqliteDb {
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filters = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
-            "SELECT id, song_id, filter_id FROM song_filter",
+            "SELECT id, song_id, filter_id FROM song_filter ORDER BY id",
         )
         .fetch_all(conn)
         .await?;
@@ -518,37 +660,13 @@ impl SongQueryRepository<Sqlite> for SqliteDb {
     async fn list_songs_with_filters<'a, A>(
         &self,
         acquiree: A,
+        max_results: i32,
+        pinned_song_id: Option<i32>,
     ) -> anyhow::Result<Vec<SongWithFilters>>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
-        let mut conn = acquiree.acquire().await?;
-
-        let rows = sqlx::query_as::<_, crate::song_query::SongWithFilterRow>(
-            r#"
-        SELECT
-            s.id,
-            s.title,
-            s.artist,
-            s.release_year,
-            s.album,
-            s.remix,
-            s.search_blob,
-            s.file_path,
-            s.duration,
-            s.extension,
-            f.id AS filter_id,
-            f.name AS filter_name
-        FROM song s
-        LEFT JOIN song_filter sf ON sf.song_id = s.id
-        LEFT JOIN filter f ON f.id = sf.filter_id
-        ORDER BY s.title, f.name
-        "#,
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(crate::song_query::group_rows(rows))
+        fetch_song_rows_with_filters(acquiree, &[], max_results, pinned_song_id).await
     }
 
     async fn search_by_db_with_filters<'a, A>(
@@ -564,63 +682,8 @@ impl SongQueryRepository<Sqlite> for SqliteDb {
             return Ok(vec![]);
         }
 
-        let mut conn = acquiree.acquire().await?;
-
-        let mut query = String::from(
-            r#"
-            SELECT
-                s.id,
-                s.title,
-                s.artist,
-                s.release_year,
-                s.album,
-                s.remix,
-                s.search_blob,
-                s.file_path,
-                s.duration,
-                s.extension,
-                f.id AS filter_id,
-                f.name AS filter_name
-            FROM song s
-            LEFT JOIN song_filter sf ON sf.song_id = s.id
-            LEFT JOIN filter f ON f.id = sf.filter_id
-            WHERE
-            "#,
-        );
-
-        for (i, _) in words.iter().enumerate() {
-            if i > 0 {
-                query.push_str(" AND ");
-            }
-            query.push_str("s.search_blob LIKE ?");
-        }
-
-        query.push_str(" ORDER BY s.title, f.name LIMIT ?");
-
-        let mut q = sqlx::query_as::<sqlx::Sqlite, SongWithFilterRow>(&query);
-
-        for word in words {
-            q = q.bind(format!("%{}%", word));
-        }
-
-        q = q.bind(max_results);
-
-        let rows = q.fetch_all(&mut *conn).await?;
-        Ok(group_rows(rows))
+        fetch_song_rows_with_filters(acquiree, words, max_results, None).await
     }
-}
-
-fn normalize_search_blob(parts: impl IntoIterator<Item = String>) -> String {
-    parts
-        .into_iter()
-        .flat_map(|part| {
-            part.split_whitespace()
-                .map(|s| s.trim().to_lowercase())
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 #[async_trait]
@@ -677,7 +740,7 @@ impl SongMutationRepository<Sqlite> for SqliteDb {
             parts.push(filter_name);
         }
 
-        let search_blob = normalize_search_blob(parts);
+        let search_blob = build_search_blob(parts);
 
         let result = sqlx::query(
             r#"
