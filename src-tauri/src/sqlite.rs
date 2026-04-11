@@ -269,75 +269,23 @@ impl SongRepository<Sqlite> for SqliteDb {
         search: &[&str],
         max_results: usize,
     ) -> anyhow::Result<Vec<Song>> {
-        Ok(songs
+        let mut songs: Vec<Song> = songs
             .iter()
             .filter(|s| search.iter().all(|x| s.search_blob.contains(x)))
-            .take(max_results)
             .cloned()
-            .collect())
-    }
+            .collect();
 
-    async fn search_by_db_alternative<'a, A>(
-        &self,
-        acquiree: A,
-        words: &[&str],
-        max_results: i32,
-    ) -> anyhow::Result<Vec<Song>>
-    where
-        A: Acquire<'a, Database = Sqlite> + Send,
-    {
-        let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-            "SELECT id, title, artist, release_year, album, remix, 
-            search_blob, file_path, duration, extension FROM song WHERE ",
-        );
+        songs.sort_by(|a, b| {
+            (&a.title, &a.artist, &a.album, a.release_year, a.id).cmp(&(
+                &b.title,
+                &b.artist,
+                &b.album,
+                b.release_year,
+                b.id,
+            ))
+        });
 
-        qb.push("(");
-        for (i, word) in words.iter().enumerate() {
-            qb.push("title LIKE ");
-            qb.push_bind(format!("%{}%", word));
-            if i != words.len() - 1 {
-                qb.push(" AND ");
-            }
-        }
-        qb.push(")");
-
-        qb.push(" OR (");
-        for (i, word) in words.iter().enumerate() {
-            qb.push("artist LIKE ");
-            qb.push_bind(format!("%{}%", word));
-            if i != words.len() - 1 {
-                qb.push(" AND ");
-            }
-        }
-        qb.push(")");
-
-        qb.push(" OR (");
-        for (i, word) in words.iter().enumerate() {
-            qb.push("release_year LIKE ");
-            qb.push_bind(format!("%{}%", word));
-            if i != words.len() - 1 {
-                qb.push(" AND ");
-            }
-        }
-        qb.push(")");
-
-        qb.push(" OR (");
-        for (i, word) in words.iter().enumerate() {
-            qb.push("album LIKE ");
-            qb.push_bind(format!("%{}%", word));
-            if i != words.len() - 1 {
-                qb.push(" AND ");
-            }
-        }
-        qb.push(")");
-
-        qb.push(" ORDER BY title, artist, album, release_year, id LIMIT ");
-        qb.push_bind(max_results);
-
-        let conn = &mut *acquiree.acquire().await?;
-
-        let query = qb.build_query_as::<Song>();
-        let songs = query.fetch_all(conn).await?;
+        songs.truncate(max_results);
 
         Ok(songs)
     }

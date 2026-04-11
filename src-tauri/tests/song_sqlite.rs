@@ -109,6 +109,60 @@ async fn integration_search_by_filters_in_memory_input() {
 }
 
 #[tokio::test]
+async fn integration_search_by_db_and_memory_results_match() {
+    let pool = setup_db().await;
+    let sqlite = SqliteDb { pool };
+    let service = SongService::new(sqlite);
+
+    let songs = sample_songs();
+    let results_memory = service
+        .search_by(&songs, &["boards", "1998"], 10)
+        .await
+        .unwrap();
+
+    service.add_songs(&service.pool, songs).await.unwrap();
+
+    let results_db = service
+        .search_by_db(&service.pool, &["boards", "1998"], 10)
+        .await
+        .unwrap();
+
+    assert_eq!(results_memory.len(), 1);
+    assert_eq!(results_memory[0].title, "Roygbiv");
+    assert_eq!(results_memory[0].extension, "flac");
+
+    assert_eq!(results_db.len(), 1);
+    assert_eq!(results_db[0].title, "Roygbiv");
+    assert_eq!(results_db[0].extension, "flac");
+
+    let results_memory = service
+        .search_by(&sample_songs(), &["19"], 10)
+        .await
+        .unwrap();
+
+    let results_db = service
+        .search_by_db(&service.pool, &["19"], 10)
+        .await
+        .unwrap();
+
+    assert_eq!(results_memory.len(), 3);
+    assert_eq!(results_memory[0].title, "Roygbiv");
+    assert_eq!(results_memory[0].artist, "Boards of Canada");
+    assert_eq!(results_memory[1].title, "Teardrop");
+    assert_eq!(results_memory[1].extension, "mp3");
+    assert_eq!(results_memory[2].title, "Windowlicker");
+    assert_eq!(results_memory[2].extension, "mp4");
+
+    assert_eq!(results_db.len(), 3);
+    assert_eq!(results_db[0].title, "Roygbiv");
+    assert_eq!(results_db[0].artist, "Boards of Canada");
+    assert_eq!(results_db[1].title, "Teardrop");
+    assert_eq!(results_db[1].extension, "mp3");
+    assert_eq!(results_db[2].title, "Windowlicker");
+    assert_eq!(results_db[2].extension, "mp4");
+}
+
+#[tokio::test]
 async fn integration_search_by_honors_max_results() {
     let pool = setup_db().await;
     let sqlite = SqliteDb { pool };
@@ -171,26 +225,6 @@ async fn integration_search_by_db_honors_max_results() {
         .await
         .unwrap();
     assert_eq!(results.len(), 1);
-}
-
-#[tokio::test]
-async fn integration_search_by_db_alternative_finds_matching_rows() {
-    let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
-    let service = SongService::new(sqlite);
-
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
-
-    let results = service
-        .search_by_db_alternative(&service.pool, &["aphex", "twin"], 10)
-        .await
-        .unwrap();
-
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].title, "Windowlicker");
 }
 
 #[tokio::test]

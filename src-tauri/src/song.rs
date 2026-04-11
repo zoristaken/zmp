@@ -64,15 +64,6 @@ where
     ) -> anyhow::Result<Vec<Song>>
     where
         A: Acquire<'a, Database = DB> + Send;
-
-    async fn search_by_db_alternative<'a, A>(
-        &self,
-        acquiree: A,
-        words: &[&str],
-        max_results: i32,
-    ) -> anyhow::Result<Vec<Song>>
-    where
-        A: Acquire<'a, Database = DB> + Send;
 }
 
 pub struct SongService<R, DB>
@@ -159,19 +150,5 @@ where
         }
 
         self.repo.search_by_db(acquiree, words, max_results).await
-    }
-
-    pub async fn search_by_db_alternative<'a, A>(
-        &self,
-        acquiree: A,
-        words: &[&str],
-        max_results: i32,
-    ) -> anyhow::Result<Vec<Song>>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.repo
-            .search_by_db_alternative(acquiree, words, max_results)
-            .await
     }
 }

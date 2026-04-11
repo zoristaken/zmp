@@ -8,6 +8,7 @@ where
         .flat_map(|part| {
             let normalized = part.as_ref().trim();
 
+            //ignore default possible song field default values and dashes
             if normalized.is_empty() || normalized == "0" || normalized == "-" {
                 return Vec::new();
             }
