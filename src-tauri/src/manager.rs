@@ -561,7 +561,8 @@ where
         })
     }
 
-    //Generates the getter and setter method for the PlayerManager, using the SetttingService
+    //Generates the getter and setter keybind methods for the PlayerManager, using the SetttingService which
+    //fetches and sets in the database the key value pair corresponding to each keybind
     keybind_manager_methods!(
         (get_focus_search_keybind, set_focus_search_keybind),
         (get_settings_keybind, set_settings_keybind),

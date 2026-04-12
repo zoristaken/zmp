@@ -13,8 +13,6 @@ use lofty::{
 };
 use walkdir::WalkDir;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac"];
-
 #[derive(Debug)]
 struct SongMetadata {
     title: String,
@@ -119,40 +117,37 @@ impl MetadataParser {
         {
             let path = entry.path();
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                let ext = ext.to_lowercase();
-                if SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
-                    match Self::read_metadata(path) {
-                        Ok(metadata) => {
-                            let m_title = metadata.title;
-                            let m_artist = metadata.artist;
-                            let m_album = metadata.album.unwrap_or_default();
-                            let m_release_year = metadata.year.unwrap_or_default();
-                            let m_remix = metadata.remix.unwrap_or_default();
+                match Self::read_metadata(path) {
+                    Ok(metadata) => {
+                        let m_title = metadata.title;
+                        let m_artist = metadata.artist;
+                        let m_album = metadata.album.unwrap_or_default();
+                        let m_release_year = metadata.year.unwrap_or_default();
+                        let m_remix = metadata.remix.unwrap_or_default();
 
-                            let search_blob = build_search_blob([
-                                m_title.as_str(),
-                                m_artist.as_str(),
-                                &m_album,
-                                &m_release_year.to_string(),
-                                m_remix.as_str(),
-                            ]);
+                        let search_blob = build_search_blob([
+                            m_title.as_str(),
+                            m_artist.as_str(),
+                            &m_album,
+                            &m_release_year.to_string(),
+                            m_remix.as_str(),
+                        ]);
 
-                            songs.push(Song {
-                                id: 0,
-                                title: m_title,
-                                artist: m_artist,
-                                release_year: m_release_year,
-                                album: m_album,
-                                remix: m_remix,
-                                search_blob,
-                                file_path: metadata.path,
-                                duration: metadata.duration as i64,
-                                extension: ext,
-                            });
-                        }
-                        Err(_) => {
-                            continue;
-                        }
+                        songs.push(Song {
+                            id: 0,
+                            title: m_title,
+                            artist: m_artist,
+                            release_year: m_release_year,
+                            album: m_album,
+                            remix: m_remix,
+                            search_blob,
+                            file_path: metadata.path,
+                            duration: metadata.duration as i64,
+                            extension: ext.to_lowercase(),
+                        });
+                    }
+                    Err(_) => {
+                        continue;
                     }
                 }
             }
