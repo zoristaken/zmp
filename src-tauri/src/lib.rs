@@ -30,7 +30,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::process_music_folder,
             commands::load,
-            commands::search_songs,
+            commands::commit_preview_search,
             commands::preview_search_songs,
             commands::get_music_folder_path,
             commands::set_music_folder_path,

@@ -30,6 +30,12 @@ pub struct QueueMutation {
     pub current_index: Option<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct PreviewSearch {
+    query: String,
+    songs: Vec<SongWithFilters>,
+}
+
 pub struct PlayerManager<R, DB>
 where
     DB: Database,
@@ -48,6 +54,7 @@ where
     pub filter: FilterService<R, DB>,
     pub metadata_parser: MetadataParser,
     pub player: Mutex<Player>,
+    preview_search: Mutex<Option<PreviewSearch>>,
     pub pool: sqlx::Pool<DB>,
 }
 
@@ -92,11 +99,13 @@ where
             filter: FilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Mutex::new(Player::new(Some(index), shuffle, repeat, volume)),
+            preview_search: Mutex::new(None),
             pool,
         }
     }
 
     pub async fn replace_library_and_reset_state(&self, songs: Vec<Song>) -> anyhow::Result<()> {
+        self.clear_preview_search()?;
         let mut tx = self.pool.begin().await?;
         self.song.replace_songs(&mut tx, songs).await?;
         self.setting.reset_library_state(&mut tx).await?;
@@ -120,6 +129,50 @@ where
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         player.current_song_id()
+    }
+
+    fn cache_preview_search(&self, query: &str, songs: Vec<SongWithFilters>) -> anyhow::Result<()> {
+        let mut preview_search = self
+            .preview_search
+            .lock()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+        *preview_search = Some(PreviewSearch {
+            query: query.to_string(),
+            songs,
+        });
+
+        Ok(())
+    }
+
+    fn take_cached_preview_search(
+        &self,
+        query: &str,
+    ) -> anyhow::Result<Option<Vec<SongWithFilters>>> {
+        let mut preview_search = self
+            .preview_search
+            .lock()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+        let matches = preview_search
+            .as_ref()
+            .map(|preview| preview.query == query)
+            .unwrap_or(false);
+
+        if matches {
+            Ok(preview_search.take().map(|preview| preview.songs))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn clear_preview_search(&self) -> anyhow::Result<()> {
+        let mut preview_search = self
+            .preview_search
+            .lock()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        *preview_search = None;
+        Ok(())
     }
 
     async fn load_song_list_in_tx(
@@ -269,14 +322,16 @@ where
             .await
     }
 
-    pub async fn search_songs(&self, query: &str) -> anyhow::Result<SongListChange> {
+    pub async fn commit_preview_search(&self, query: &str) -> anyhow::Result<SongListChange> {
         let trimmed = query.trim();
 
         self.setting
             .set_saved_search_blob(&self.pool, trimmed)
             .await?;
 
-        let songs = self.query_song_list(trimmed).await?;
+        let songs = self
+            .take_cached_preview_search(trimmed)?
+            .ok_or_else(|| anyhow::anyhow!("no cached preview search for query: {}", trimmed))?;
         let count = songs.len();
         let sync = self.sync_song_list(songs)?;
         let current_index = self.persist_queue_sync(sync).await?;
@@ -288,7 +343,10 @@ where
     }
 
     pub async fn preview_search_songs(&self, query: &str) -> anyhow::Result<Vec<SongWithFilters>> {
-        self.query_song_list(query).await
+        let trimmed = query.trim();
+        let songs = self.query_song_list(trimmed).await?;
+        self.cache_preview_search(trimmed, songs.clone())?;
+        Ok(songs)
     }
 
     pub async fn next_song(&self) -> anyhow::Result<PlaybackChange> {

@@ -144,12 +144,12 @@ pub async fn play_song_at(
 }
 
 #[tauri::command]
-pub async fn search_songs(
+pub async fn commit_preview_search(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     query: String,
 ) -> AppResult<usize> {
-    let result = state.zmp.search_songs(&query).await?;
+    let result = state.zmp.commit_preview_search(&query).await?;
     emit_track_changed(&app, result.current_index)?;
     Ok(result.count)
 }

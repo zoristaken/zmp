@@ -403,7 +403,7 @@
     }
 
     try {
-      await invoke<number>("search_songs", {
+      await invoke<number>("commit_preview_search", {
         query: lastDisplayedSearchQuery,
       });
       lastCommittedSearchQuery = lastDisplayedSearchQuery;
@@ -503,22 +503,31 @@
     const previousSelectedSongId = selectedSongId;
     const previousSelectedIndex = selectedIndex;
     const normalizedQuery = normalizeSearchQuery(searchQuery);
+
+    if (!shouldCommit && normalizedQuery === lastDisplayedSearchQuery) {
+      return;
+    }
+
     const requestVersion = ++searchRequestVersion;
 
     try {
       if (shouldCommit) {
-        const previewSongs = await invoke<Song[]>("preview_search_songs", {
-          query: normalizedQuery,
-        });
+        const previewSongs =
+          normalizedQuery === lastDisplayedSearchQuery
+            ? songs
+            : await invoke<Song[]>("preview_search_songs", {
+                query: normalizedQuery,
+              });
 
         if (requestVersion !== searchRequestVersion) return;
 
+        songs = previewSongs;
+        searchResultCount = previewSongs.length;
+        lastDisplayedSearchQuery = normalizedQuery;
+
         if (previewSongs.length === 0) {
-          songs = previewSongs;
-          searchResultCount = 0;
-          lastDisplayedSearchQuery = normalizedQuery;
-        } else {
-          const count = await invoke<number>("search_songs", {
+        } else if (normalizedQuery !== lastCommittedSearchQuery) {
+          const count = await invoke<number>("commit_preview_search", {
             query: normalizedQuery,
           });
 
@@ -526,8 +535,6 @@
 
           searchResultCount = count;
           lastCommittedSearchQuery = normalizedQuery;
-          lastDisplayedSearchQuery = normalizedQuery;
-          await refreshLoadedSongs();
         }
       } else {
         songs = await invoke<Song[]>("preview_search_songs", {
@@ -558,15 +565,6 @@
         if (visibleSelectedIndex >= 0) {
           nextSelectedIndex = visibleSelectedIndex;
         }
-      }
-
-      if (
-        nextSelectedIndex === null &&
-        previousSelectedIndex !== null &&
-        previousSelectedIndex >= 0 &&
-        previousSelectedIndex < songs.length
-      ) {
-        nextSelectedIndex = previousSelectedIndex;
       }
 
       if (playResult && nextSelectedIndex === null && songs.length > 0) {
