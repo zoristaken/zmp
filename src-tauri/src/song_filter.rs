@@ -1,8 +1,8 @@
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use serde::Serialize;
 use sqlx::{Acquire, Database};
-
-use crate::manager::HasPool;
 
 #[allow(dead_code)]
 #[derive(sqlx::FromRow, Debug, Clone, PartialEq, Serialize)]
@@ -66,18 +66,18 @@ where
     R: SongFilterRepository<DB>,
     DB: Database,
 {
-    pub pool: sqlx::Pool<DB>,
+    _db: PhantomData<DB>,
     repo: R,
 }
 
 impl<R, DB> SongFilterService<R, DB>
 where
-    R: SongFilterRepository<DB> + HasPool<DB>,
+    R: SongFilterRepository<DB>,
     DB: Database,
 {
     pub fn new(repo: R) -> Self {
         Self {
-            pool: repo.pool().clone(),
+            _db: PhantomData,
             repo,
         }
     }

@@ -1,15 +1,13 @@
+use sqlx::Sqlite;
 use tauri::Manager;
 
-use crate::{
-    manager::{AppState, PlayerManager},
-    sqlite::SqliteDb,
-};
+use crate::{manager::PlayerManager, sqlite::SqliteImpl};
 
 mod commands;
 mod config;
 pub mod errors;
 pub mod filter;
-mod manager;
+pub mod manager;
 pub mod metadata;
 pub mod player;
 mod search_blob;
@@ -19,6 +17,10 @@ pub mod song_filter;
 pub mod song_mutation;
 pub mod song_query;
 pub mod sqlite;
+
+pub struct AppState {
+    pub zmp: PlayerManager<SqliteImpl, Sqlite>,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -81,10 +83,10 @@ pub fn run() {
         .setup(|app| {
             tauri::async_runtime::block_on(async move {
                 let config = config::Config::new(app).await.unwrap();
-                let path = config.db_path().await.unwrap();
-                let sqlite = SqliteDb::new(&path).await.unwrap();
+                let path = config.sqlite_path().await.unwrap();
+                let pool = sqlite::new(&path).await.unwrap();
                 app.manage(AppState {
-                    zmp: PlayerManager::new(sqlite.clone()).await,
+                    zmp: PlayerManager::new(pool, SqliteImpl {}).await,
                 });
             });
             Ok(())

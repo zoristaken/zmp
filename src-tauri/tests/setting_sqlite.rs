@@ -1,85 +1,82 @@
 pub mod common;
 use crate::common::setup_db;
 use zmp_lib::setting::{SettingService, DEFAULT_SONG_LIST_LIMIT};
-use zmp_lib::sqlite::SqliteDb;
+use zmp_lib::sqlite::SqliteImpl;
 
 #[tokio::test]
 async fn integration_music_folder_path_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
     service
-        .set_music_folder_path(&service.pool, "/var/lib/music")
+        .set_music_folder_path(&pool, "/var/lib/music")
         .await
         .unwrap();
 
-    let actual = service.get_music_folder_path(&service.pool).await.unwrap();
+    let actual = service.get_music_folder_path(&pool).await.unwrap();
     assert_eq!(actual, "/var/lib/music");
 }
 
 #[tokio::test]
 async fn integration_repeat_flag_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    assert!(!service.is_repeat_flag(&service.pool).await);
+    assert!(!service.is_repeat_flag(&pool).await);
 
-    service.set_repeat_flag(&service.pool, true).await.unwrap();
-    assert!(service.is_repeat_flag(&service.pool).await);
+    service.set_repeat_flag(&pool, true).await.unwrap();
+    assert!(service.is_repeat_flag(&pool).await);
 
-    service.set_repeat_flag(&service.pool, false).await.unwrap();
-    assert!(!service.is_repeat_flag(&service.pool).await);
+    service.set_repeat_flag(&pool, false).await.unwrap();
+    assert!(!service.is_repeat_flag(&pool).await);
 }
 
 #[tokio::test]
 async fn integration_random_play_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    assert!(!service.is_random_play(&service.pool).await);
+    assert!(!service.is_random_play(&pool).await);
 
-    service.set_random_play(&service.pool, true).await.unwrap();
-    assert!(service.is_random_play(&service.pool).await);
+    service.set_random_play(&pool, true).await.unwrap();
+    assert!(service.is_random_play(&pool).await);
 
-    service.set_random_play(&service.pool, false).await.unwrap();
-    assert!(!service.is_random_play(&service.pool).await);
+    service.set_random_play(&pool, false).await.unwrap();
+    assert!(!service.is_random_play(&pool).await);
 }
 
 #[tokio::test]
 async fn integration_processed_music_folder_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    assert!(!service.has_processed_music_folder(&service.pool).await);
+    assert!(!service.has_processed_music_folder(&pool).await);
 
     service
-        .set_processed_music_folder(&service.pool, true)
+        .set_processed_music_folder(&pool, true)
         .await
         .unwrap();
-    assert!(service.has_processed_music_folder(&service.pool).await);
+    assert!(service.has_processed_music_folder(&pool).await);
 
     service
-        .set_processed_music_folder(&service.pool, false)
+        .set_processed_music_folder(&pool, false)
         .await
         .unwrap();
-    assert!(!service.has_processed_music_folder(&service.pool).await);
+    assert!(!service.has_processed_music_folder(&pool).await);
 }
 
 #[tokio::test]
 async fn integration_saved_volume_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    service
-        .set_saved_volume_value(&service.pool, 0.42)
-        .await
-        .unwrap();
-    let actual = service.get_saved_volume_value(&service.pool).await;
+    service.set_saved_volume_value(&pool, 0.42).await.unwrap();
+    let actual = service.get_saved_volume_value(&pool).await;
 
     assert!((actual - 0.42).abs() < f32::EPSILON);
 }
@@ -87,7 +84,7 @@ async fn integration_saved_volume_roundtrip() {
 #[tokio::test]
 async fn integration_saved_volume_returns_default_for_invalid_db_value() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
     sqlx::query(
@@ -96,36 +93,36 @@ async fn integration_saved_volume_returns_default_for_invalid_db_value() {
         VALUES ('volume_value', 'definitely-not-a-float')
         "#,
     )
-    .execute(&service.pool)
+    .execute(&pool)
     .await
     .unwrap();
 
-    let actual = service.get_saved_volume_value(&service.pool).await;
+    let actual = service.get_saved_volume_value(&pool).await;
     assert_eq!(actual, 0.5);
 }
 
 #[tokio::test]
 async fn integration_saved_search_blob_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
     service
-        .set_saved_search_blob(&service.pool, "genre:ambient")
+        .set_saved_search_blob(&pool, "genre:ambient")
         .await
         .unwrap();
 
-    let actual = service.get_saved_search_blob(&service.pool).await.unwrap();
+    let actual = service.get_saved_search_blob(&pool).await.unwrap();
     assert_eq!(actual, "genre:ambient");
 }
 
 #[tokio::test]
 async fn integration_song_list_limit_returns_default_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    let actual = service.get_song_list_limit(&service.pool).await;
+    let actual = service.get_song_list_limit(&pool).await;
 
     assert_eq!(actual, DEFAULT_SONG_LIST_LIMIT);
 }
@@ -133,15 +130,12 @@ async fn integration_song_list_limit_returns_default_when_missing() {
 #[tokio::test]
 async fn integration_song_list_limit_roundtrip() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    service
-        .set_song_list_limit(&service.pool, 2500)
-        .await
-        .unwrap();
+    service.set_song_list_limit(&pool, 2500).await.unwrap();
 
-    let actual = service.get_song_list_limit(&service.pool).await;
+    let actual = service.get_song_list_limit(&pool).await;
 
     assert_eq!(actual, 2500);
 }
@@ -149,17 +143,11 @@ async fn integration_song_list_limit_roundtrip() {
 #[tokio::test]
 async fn integration_song_list_limit_rejects_non_positive_values() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
-    let zero_error = service
-        .set_song_list_limit(&service.pool, 0)
-        .await
-        .unwrap_err();
-    let negative_error = service
-        .set_song_list_limit(&service.pool, -25)
-        .await
-        .unwrap_err();
+    let zero_error = service.set_song_list_limit(&pool, 0).await.unwrap_err();
+    let negative_error = service.set_song_list_limit(&pool, -25).await.unwrap_err();
 
     assert!(zero_error.to_string().contains("greater than 0"));
     assert!(negative_error.to_string().contains("greater than 0"));
@@ -168,56 +156,38 @@ async fn integration_song_list_limit_rejects_non_positive_values() {
 #[tokio::test]
 async fn integration_keybind_roundtrips() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
+    service.set_settings_keybind(&pool, "Ctrl+,").await.unwrap();
     service
-        .set_settings_keybind(&service.pool, "Ctrl+,")
+        .set_play_pause_keybind(&pool, "Space")
         .await
         .unwrap();
     service
-        .set_play_pause_keybind(&service.pool, "Space")
+        .set_previous_keybind(&pool, "Ctrl+Left")
         .await
         .unwrap();
+    service.set_next_keybind(&pool, "Ctrl+Right").await.unwrap();
+    service.set_shuffle_keybind(&pool, "Ctrl+R").await.unwrap();
     service
-        .set_previous_keybind(&service.pool, "Ctrl+Left")
-        .await
-        .unwrap();
-    service
-        .set_next_keybind(&service.pool, "Ctrl+Right")
-        .await
-        .unwrap();
-    service
-        .set_shuffle_keybind(&service.pool, "Ctrl+R")
-        .await
-        .unwrap();
-    service
-        .set_saved_search_blob(&service.pool, "aphex twin")
+        .set_saved_search_blob(&pool, "aphex twin")
         .await
         .unwrap();
 
+    assert_eq!(service.get_settings_keybind(&pool).await.unwrap(), "Ctrl+,");
     assert_eq!(
-        service.get_settings_keybind(&service.pool).await.unwrap(),
-        "Ctrl+,"
-    );
-    assert_eq!(
-        service.get_play_pause_keybind(&service.pool).await.unwrap(),
+        service.get_play_pause_keybind(&pool).await.unwrap(),
         "Space"
     );
     assert_eq!(
-        service.get_previous_keybind(&service.pool).await.unwrap(),
+        service.get_previous_keybind(&pool).await.unwrap(),
         "Ctrl+Left"
     );
+    assert_eq!(service.get_next_keybind(&pool).await.unwrap(), "Ctrl+Right");
+    assert_eq!(service.get_shuffle_keybind(&pool).await.unwrap(), "Ctrl+R");
     assert_eq!(
-        service.get_next_keybind(&service.pool).await.unwrap(),
-        "Ctrl+Right"
-    );
-    assert_eq!(
-        service.get_shuffle_keybind(&service.pool).await.unwrap(),
-        "Ctrl+R"
-    );
-    assert_eq!(
-        service.get_saved_search_blob(&service.pool).await.unwrap(),
+        service.get_saved_search_blob(&pool).await.unwrap(),
         "aphex twin"
     );
 }
@@ -225,19 +195,19 @@ async fn integration_keybind_roundtrips() {
 #[tokio::test]
 async fn integration_updates_existing_setting_instead_of_duplicate_insert() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SettingService::new(sqlite);
 
     service
-        .set_music_folder_path(&service.pool, "/music/a")
+        .set_music_folder_path(&pool, "/music/a")
         .await
         .unwrap();
     service
-        .set_music_folder_path(&service.pool, "/music/b")
+        .set_music_folder_path(&pool, "/music/b")
         .await
         .unwrap();
 
-    let actual = service.get_music_folder_path(&service.pool).await.unwrap();
+    let actual = service.get_music_folder_path(&pool).await.unwrap();
     assert_eq!(actual, "/music/b");
 
     let count: i64 = sqlx::query_scalar(
@@ -247,9 +217,60 @@ async fn integration_updates_existing_setting_instead_of_duplicate_insert() {
         WHERE key = 'music_folder_path'
         "#,
     )
-    .fetch_one(&service.pool)
+    .fetch_one(&pool)
     .await
     .unwrap();
 
     assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn integration_persist_started_track_resets_seek_and_marks_playing() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    service.set_current_song_seek(&pool, 27).await.unwrap();
+    service.set_play_pause_flag(&pool, false).await.unwrap();
+
+    service.persist_started_track(&pool, Some(3)).await.unwrap();
+
+    assert_eq!(service.get_saved_index(&pool).await, 3);
+    assert_eq!(service.get_current_song_seek(&pool).await, 0);
+    assert!(service.is_playing(&pool).await);
+}
+
+#[tokio::test]
+async fn integration_persist_queue_sync_clears_playback_state_when_current_song_disappears() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    service.set_current_song_seek(&pool, 91).await.unwrap();
+    service.set_play_pause_flag(&pool, true).await.unwrap();
+
+    service.persist_queue_sync(&pool, None, true).await.unwrap();
+
+    assert_eq!(service.get_saved_index(&pool).await, 0);
+    assert_eq!(service.get_current_song_seek(&pool).await, 0);
+    assert!(!service.is_playing(&pool).await);
+}
+
+#[tokio::test]
+async fn integration_persist_queue_sync_preserves_seek_and_play_flag_when_song_is_still_selected() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    service.set_current_song_seek(&pool, 42).await.unwrap();
+    service.set_play_pause_flag(&pool, true).await.unwrap();
+
+    service
+        .persist_queue_sync(&pool, Some(1), false)
+        .await
+        .unwrap();
+
+    assert_eq!(service.get_saved_index(&pool).await, 1);
+    assert_eq!(service.get_current_song_seek(&pool).await, 42);
+    assert!(service.is_playing(&pool).await);
 }

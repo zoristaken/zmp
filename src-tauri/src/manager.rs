@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Mutex};
 
-use sqlx::{Database, Pool, Sqlite};
+use sqlx::{Database, Pool};
 
 use crate::{
     filter::{Filter, FilterRepository, FilterService},
@@ -11,16 +11,7 @@ use crate::{
     song_filter::{SongFilter, SongFilterRepository, SongFilterService},
     song_mutation::{SongMutationRepository, SongMutationService},
     song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
-    sqlite::SqliteDb,
 };
-
-pub struct AppState {
-    pub zmp: PlayerManager<SqliteDb, Sqlite>,
-}
-
-pub trait HasPool<DB: Database> {
-    fn pool(&self) -> &Pool<DB>;
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlaybackChange {
@@ -47,8 +38,7 @@ where
         + FilterRepository<DB>
         + SongFilterRepository<DB>
         + SongQueryRepository<DB>
-        + SongMutationRepository<DB>
-        + HasPool<DB>,
+        + SongMutationRepository<DB>,
 {
     pub setting: SettingService<R, DB>,
     pub song: SongService<R, DB>,
@@ -59,23 +49,6 @@ where
     pub metadata_parser: MetadataParser,
     pub player: Mutex<Player>,
     pub pool: sqlx::Pool<DB>,
-}
-
-async fn replace_library_and_reset_state<R, DB>(
-    song_service: &SongService<R, DB>,
-    setting_service: &SettingService<R, DB>,
-    songs: Vec<Song>,
-) -> anyhow::Result<()>
-where
-    DB: Database,
-    R: SongRepository<DB> + SettingRepository<DB> + HasPool<DB>,
-{
-    let mut tx = song_service.pool.begin().await?;
-    song_service.replace_songs(&mut tx, songs).await?;
-    setting_service.reset_library_state(&mut tx).await?;
-    tx.commit().await?;
-
-    Ok(())
 }
 
 macro_rules! keybind_manager_methods {
@@ -101,15 +74,14 @@ where
         + SongFilterRepository<DB>
         + SongQueryRepository<DB>
         + SongMutationRepository<DB>
-        + HasPool<DB>
         + Clone,
 {
-    pub async fn new(repos: R) -> Self {
+    pub async fn new(pool: Pool<DB>, repos: R) -> Self {
         let setting = SettingService::new(repos.clone());
-        let index = setting.get_saved_index(&setting.pool).await;
-        let shuffle = setting.is_random_play(&setting.pool).await;
-        let repeat = setting.is_repeat_flag(&setting.pool).await;
-        let volume = setting.get_saved_volume_value(&setting.pool).await;
+        let index = setting.get_saved_index(&pool).await;
+        let shuffle = setting.is_random_play(&pool).await;
+        let repeat = setting.is_repeat_flag(&pool).await;
+        let volume = setting.get_saved_volume_value(&pool).await;
 
         Self {
             setting,
@@ -120,8 +92,16 @@ where
             filter: FilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Mutex::new(Player::new(Some(index), shuffle, repeat, volume)),
-            pool: repos.pool().clone(),
+            pool,
         }
+    }
+
+    pub async fn replace_library_and_reset_state(&self, songs: Vec<Song>) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        self.song.replace_songs(&mut tx, songs).await?;
+        self.setting.reset_library_state(&mut tx).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     pub async fn process_music_folder(&self) -> anyhow::Result<()> {
@@ -130,7 +110,7 @@ where
             .metadata_parser
             .parse_song_metadata(Path::new(&folder_path))?;
 
-        replace_library_and_reset_state(&self.song, &self.setting, songs).await
+        self.replace_library_and_reset_state(songs).await
     }
 
     fn current_song_id(&self) -> anyhow::Result<Option<i32>> {
@@ -172,7 +152,7 @@ where
 
     async fn persist_queue_sync(&self, sync: QueueSyncResult) -> anyhow::Result<Option<usize>> {
         self.setting
-            .persist_queue_sync(sync.current_index, sync.cleared_current_song)
+            .persist_queue_sync(&self.pool, sync.current_index, sync.cleared_current_song)
             .await?;
 
         Ok(sync.current_index)
@@ -273,7 +253,9 @@ where
             player.current_index()
         };
 
-        self.setting.persist_started_track(current_index).await?;
+        self.setting
+            .persist_started_track(&self.pool, current_index)
+            .await?;
 
         Ok(PlaybackChange { current_index })
     }
@@ -316,7 +298,9 @@ where
             player.current_index()
         };
 
-        self.setting.persist_started_track(current_index).await?;
+        self.setting
+            .persist_started_track(&self.pool, current_index)
+            .await?;
 
         Ok(PlaybackChange { current_index })
     }
@@ -328,7 +312,9 @@ where
             player.current_index()
         };
 
-        self.setting.persist_started_track(current_index).await?;
+        self.setting
+            .persist_started_track(&self.pool, current_index)
+            .await?;
 
         Ok(PlaybackChange { current_index })
     }
@@ -528,158 +514,4 @@ where
         (get_previous_keybind, set_previous_keybind),
         (get_play_pause_keybind, set_play_pause_keybind),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use sqlx::SqlitePool;
-
-    use crate::{
-        filter::FilterService, setting::SettingService, song::SongService,
-        song_filter::SongFilterService, sqlite::SqliteDb,
-    };
-
-    use super::replace_library_and_reset_state;
-
-    fn song(title: &str, artist: &str, path: &str) -> crate::song::Song {
-        crate::song::Song {
-            id: 0,
-            title: title.to_string(),
-            artist: artist.to_string(),
-            release_year: 1998,
-            album: "Album".to_string(),
-            remix: String::new(),
-            search_blob: format!(
-                "{} {} album 1998",
-                title.to_lowercase(),
-                artist.to_lowercase()
-            ),
-            file_path: path.to_string(),
-            duration: 180,
-            extension: "flac".to_string(),
-        }
-    }
-
-    async fn setup_db() -> SqliteDb {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        SqliteDb { pool }
-    }
-
-    #[tokio::test]
-    async fn replace_library_and_reset_state_replaces_songs_and_resets_playback_settings() {
-        let sqlite = setup_db().await;
-        let song_service = SongService::new(sqlite.clone());
-        let setting_service = SettingService::new(sqlite.clone());
-
-        song_service
-            .add_songs(
-                &song_service.pool,
-                vec![song("Teardrop", "Massive Attack", "/music/teardrop.flac")],
-            )
-            .await
-            .unwrap();
-
-        setting_service
-            .set_saved_search_blob(&setting_service.pool, "massive attack")
-            .await
-            .unwrap();
-        setting_service
-            .set_saved_index(&setting_service.pool, 7)
-            .await
-            .unwrap();
-        setting_service
-            .set_current_song_seek(&setting_service.pool, 123)
-            .await
-            .unwrap();
-        setting_service
-            .set_play_pause_flag(&setting_service.pool, true)
-            .await
-            .unwrap();
-        setting_service
-            .set_processed_music_folder(&setting_service.pool, false)
-            .await
-            .unwrap();
-
-        replace_library_and_reset_state(
-            &song_service,
-            &setting_service,
-            vec![song("Archangel", "Burial", "/music/archangel.flac")],
-        )
-        .await
-        .unwrap();
-
-        let songs = song_service.list_songs(&song_service.pool).await.unwrap();
-
-        assert_eq!(songs.len(), 1);
-        assert_eq!(songs[0].title, "Archangel");
-        assert_eq!(songs[0].artist, "Burial");
-        assert_eq!(
-            setting_service
-                .get_saved_search_blob(&setting_service.pool)
-                .await
-                .unwrap(),
-            ""
-        );
-        assert_eq!(
-            setting_service.get_saved_index(&setting_service.pool).await,
-            0
-        );
-        assert_eq!(
-            setting_service
-                .get_current_song_seek(&setting_service.pool)
-                .await,
-            0
-        );
-        assert!(!setting_service.is_playing(&setting_service.pool).await);
-        assert!(
-            setting_service
-                .has_processed_music_folder(&setting_service.pool)
-                .await
-        );
-    }
-
-    #[tokio::test]
-    async fn replace_library_and_reset_state_clears_song_filter_links_but_keeps_filters() {
-        let sqlite = setup_db().await;
-        let song_service = SongService::new(sqlite.clone());
-        let setting_service = SettingService::new(sqlite.clone());
-        let filter_service = FilterService::new(sqlite.clone());
-        let song_filter_service = SongFilterService::new(sqlite.clone());
-
-        song_service
-            .add_songs(
-                &song_service.pool,
-                vec![song("Teardrop", "Massive Attack", "/music/teardrop.flac")],
-            )
-            .await
-            .unwrap();
-
-        filter_service
-            .add(&filter_service.pool, "ambient")
-            .await
-            .unwrap();
-        song_filter_service
-            .add(&song_filter_service.pool, 1, 1)
-            .await
-            .unwrap();
-
-        replace_library_and_reset_state(
-            &song_service,
-            &setting_service,
-            vec![song("Archangel", "Burial", "/music/archangel.flac")],
-        )
-        .await
-        .unwrap();
-
-        let filters = filter_service.get_all(&filter_service.pool).await.unwrap();
-        let song_filters = song_filter_service
-            .get_all(&song_filter_service.pool)
-            .await
-            .unwrap();
-
-        assert_eq!(filters.len(), 1);
-        assert_eq!(filters[0].name, "ambient");
-        assert!(song_filters.is_empty());
-    }
 }

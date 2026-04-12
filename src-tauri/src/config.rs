@@ -21,7 +21,7 @@ impl Config {
         })
     }
 
-    pub async fn db_path(&self) -> anyhow::Result<String> {
+    pub async fn sqlite_path(&self) -> anyhow::Result<String> {
         let path = self
             .config_path
             .to_str()

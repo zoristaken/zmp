@@ -3,7 +3,7 @@ use zmp_lib::{
     filter::{Filter, FilterService},
     song::{Song, SongService},
     song_filter::{SongFilter, SongFilterService},
-    sqlite::SqliteDb,
+    sqlite::SqliteImpl,
 };
 
 pub async fn setup_db() -> SqlitePool {
@@ -19,18 +19,16 @@ pub async fn setup_db_with_song_and_filters() -> SqlitePool {
 
     let _ = sqlx::migrate!("./migrations").run(&pool).await;
 
-    let sqlite = SqliteDb { pool: pool.clone() };
+    let sqlite = SqliteImpl {};
     let song_service = SongService::new(sqlite.clone());
     let filter_service = FilterService::new(sqlite.clone());
 
-    let _ = song_service
-        .add_songs(&song_service.pool, sample_songs())
-        .await;
+    let _ = song_service.add_songs(&pool, sample_songs()).await;
 
     let filters = sample_filters();
 
     for filter in filters {
-        let _ = filter_service.add(&filter_service.pool, &filter.name).await;
+        let _ = filter_service.add(&pool, &filter.name).await;
     }
 
     pool
@@ -38,50 +36,32 @@ pub async fn setup_db_with_song_and_filters() -> SqlitePool {
 
 pub async fn setup_db_with_query_fixture() -> SqlitePool {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool.clone() };
+    let sqlite = SqliteImpl {};
     let song_service = SongService::new(sqlite.clone());
     let filter_service = FilterService::new(sqlite.clone());
     let song_filter_service = SongFilterService::new(sqlite);
 
-    song_service
-        .add_songs(&song_service.pool, sample_songs())
-        .await
-        .unwrap();
+    song_service.add_songs(&pool, sample_songs()).await.unwrap();
 
-    filter_service
-        .add(&filter_service.pool, "favorites")
-        .await
-        .unwrap();
-    filter_service
-        .add(&filter_service.pool, "ambient")
-        .await
-        .unwrap();
+    filter_service.add(&pool, "favorites").await.unwrap();
+    filter_service.add(&pool, "ambient").await.unwrap();
 
-    song_filter_service
-        .add(&song_filter_service.pool, 1, 1)
-        .await
-        .unwrap();
-    song_filter_service
-        .add(&song_filter_service.pool, 1, 2)
-        .await
-        .unwrap();
-    song_filter_service
-        .add(&song_filter_service.pool, 3, 2)
-        .await
-        .unwrap();
+    song_filter_service.add(&pool, 1, 1).await.unwrap();
+    song_filter_service.add(&pool, 1, 2).await.unwrap();
+    song_filter_service.add(&pool, 3, 2).await.unwrap();
 
     pool
 }
 
 pub async fn setup_db_with_single_song_and_filters() -> SqlitePool {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool: pool.clone() };
+    let sqlite = SqliteImpl {};
     let song_service = SongService::new(sqlite.clone());
     let filter_service = FilterService::new(sqlite);
 
     song_service
         .add_songs(
-            &song_service.pool,
+            &pool,
             vec![song(
                 0,
                 "Teardrop",
@@ -98,14 +78,8 @@ pub async fn setup_db_with_single_song_and_filters() -> SqlitePool {
         .await
         .unwrap();
 
-    filter_service
-        .add(&filter_service.pool, "ambient")
-        .await
-        .unwrap();
-    filter_service
-        .add(&filter_service.pool, "favorites")
-        .await
-        .unwrap();
+    filter_service.add(&pool, "ambient").await.unwrap();
+    filter_service.add(&pool, "favorites").await.unwrap();
 
     pool
 }

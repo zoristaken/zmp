@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::Serialize;
 use sqlx::{Acquire, Database, FromRow};
 
-use crate::{filter::Filter, manager::HasPool, song::Song};
+use crate::{filter::Filter, song::Song};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -14,66 +14,61 @@ pub struct SongWithFilters {
 }
 
 #[derive(Debug, Clone, PartialEq, FromRow)]
-pub struct SongWithFilterRow {
-    pub id: i32,
-    pub title: String,
-    pub artist: String,
-    pub release_year: i32,
-    pub album: String,
-    pub remix: String,
-    pub search_blob: String,
-    pub file_path: String,
-    pub duration: i64,
-    pub extension: String,
-    pub filter_id: Option<i32>,
-    pub filter_name: Option<String>,
+pub(crate) struct SongWithFilterRow {
+    id: i32,
+    title: String,
+    artist: String,
+    release_year: i32,
+    album: String,
+    remix: String,
+    search_blob: String,
+    file_path: String,
+    duration: i64,
+    extension: String,
+    filter_id: Option<i32>,
+    filter_name: Option<String>,
 }
 
-pub fn group_rows(rows: Vec<SongWithFilterRow>) -> Vec<SongWithFilters> {
+pub(crate) fn group_song_rows(rows: Vec<SongWithFilterRow>) -> Vec<SongWithFilters> {
     let mut grouped = Vec::new();
     let mut positions = HashMap::new();
 
     for row in rows {
-        let SongWithFilterRow {
-            id,
-            title,
-            artist,
-            release_year,
-            album,
-            remix,
-            search_blob,
-            file_path,
-            duration,
-            extension,
-            filter_id,
-            filter_name,
-        } = row;
+        let filter = match (row.filter_id, row.filter_name) {
+            (Some(id), Some(name)) => Some(Filter { id, name }),
+            _ => None,
+        };
 
-        let position = *positions.entry(id).or_insert_with(|| {
-            let position = grouped.len();
-            grouped.push(SongWithFilters {
-                song: Song {
-                    id,
-                    title,
-                    artist,
-                    release_year,
-                    album,
-                    remix,
-                    search_blob,
-                    file_path,
-                    duration,
-                    extension,
-                },
-                filters: Vec::new(),
-            });
-            position
-        });
+        let position = match positions.get(&row.id).copied() {
+            Some(position) => position,
+            None => {
+                let position = grouped.len();
 
-        if let (Some(filter_id), Some(filter_name)) = (filter_id, filter_name) {
-            grouped[position].filters.push(Filter {
-                id: filter_id,
-                name: filter_name,
-            });
+                let song = Song {
+                    id: row.id,
+                    title: row.title,
+                    artist: row.artist,
+                    release_year: row.release_year,
+                    album: row.album,
+                    remix: row.remix,
+                    search_blob: row.search_blob,
+                    file_path: row.file_path,
+                    duration: row.duration,
+                    extension: row.extension,
+                };
+
+                grouped.push(SongWithFilters {
+                    song,
+                    filters: Vec::new(),
+                });
+
+                positions.insert(row.id, position);
+                position
+            }
+        };
+
+        if let Some(filter) = filter {
+            grouped[position].filters.push(filter);
         }
     }
 
@@ -90,20 +85,12 @@ pub trait SongQueryRepository<DB>
 where
     DB: Database,
 {
-    async fn list_songs_with_filters<'a, A>(
-        &self,
-        acquiree: A,
-        max_results: i32,
-        pinned_song_id: Option<i32>,
-    ) -> anyhow::Result<Vec<SongWithFilters>>
-    where
-        A: Acquire<'a, Database = DB> + Send;
-
     async fn search_by_db_with_filters<'a, A>(
         &self,
         acquiree: A,
         words: &[&str],
         max_results: i32,
+        pinned_song_id: Option<i32>,
     ) -> anyhow::Result<Vec<SongWithFilters>>
     where
         A: Acquire<'a, Database = DB> + Send;
@@ -120,28 +107,14 @@ where
 
 impl<R, DB> SongQueryService<R, DB>
 where
-    R: SongQueryRepository<DB> + HasPool<DB>,
+    R: SongQueryRepository<DB>,
     DB: Database,
 {
     pub fn new(repo: R) -> Self {
         Self {
-            _db: PhantomData::default(),
+            _db: PhantomData,
             repo,
         }
-    }
-
-    pub async fn list_songs_with_filters<'a, A>(
-        &self,
-        acquiree: A,
-        max_results: i32,
-        pinned_song_id: Option<i32>,
-    ) -> anyhow::Result<Vec<SongWithFilters>>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.repo
-            .list_songs_with_filters(acquiree, max_results, pinned_song_id)
-            .await
     }
 
     pub async fn query_song_list<'a, A>(
@@ -154,33 +127,67 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        let trimmed = query.trim();
+        let words: Vec<&str> = query.split_whitespace().collect();
+        self.repo
+            .search_by_db_with_filters(acquiree, &words, max_results, pinned_song_id)
+            .await
+    }
+}
 
-        if trimmed.is_empty() {
-            self.list_songs_with_filters(acquiree, max_results, pinned_song_id)
-                .await
-        } else {
-            let words: Vec<&str> = trimmed.split_whitespace().collect();
-            self.search_by_db_with_filters(acquiree, &words, max_results)
-                .await
+#[cfg(test)]
+mod tests {
+    use super::{group_song_rows, SongWithFilterRow};
+
+    fn row(
+        id: i32,
+        title: &str,
+        filter_id: Option<i32>,
+        filter_name: Option<&str>,
+    ) -> SongWithFilterRow {
+        SongWithFilterRow {
+            id,
+            title: title.to_string(),
+            artist: "artist".to_string(),
+            release_year: 1999,
+            album: "album".to_string(),
+            remix: String::new(),
+            search_blob: title.to_lowercase(),
+            file_path: format!("/music/{id}.mp3"),
+            duration: 180,
+            extension: "mp3".to_string(),
+            filter_id,
+            filter_name: filter_name.map(str::to_string),
         }
     }
 
-    pub async fn search_by_db_with_filters<'a, A>(
-        &self,
-        acquiree: A,
-        words: &[&str],
-        max_results: i32,
-    ) -> anyhow::Result<Vec<SongWithFilters>>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        if words.is_empty() {
-            return Ok(vec![]);
-        }
+    #[test]
+    fn group_song_rows_preserves_input_song_order() {
+        let rows = vec![
+            row(2, "Alpha", Some(1), Some("ambient")),
+            row(1, "Bravo", Some(2), Some("favorites")),
+            row(3, "Charlie", None, None),
+        ];
 
-        self.repo
-            .search_by_db_with_filters(acquiree, words, max_results)
-            .await
+        let grouped = group_song_rows(rows);
+
+        assert_eq!(grouped.len(), 3);
+        assert_eq!(grouped[0].song.id, 2);
+        assert_eq!(grouped[1].song.id, 1);
+        assert_eq!(grouped[2].song.id, 3);
+    }
+
+    #[test]
+    fn group_song_rows_keeps_multiple_filters_on_the_same_song() {
+        let rows = vec![
+            row(7, "Teardrop", Some(1), Some("ambient")),
+            row(7, "Teardrop", Some(2), Some("favorites")),
+        ];
+
+        let grouped = group_song_rows(rows);
+
+        assert_eq!(grouped.len(), 1);
+        assert_eq!(grouped[0].filters.len(), 2);
+        assert_eq!(grouped[0].filters[0].name, "ambient");
+        assert_eq!(grouped[0].filters[1].name, "favorites");
     }
 }

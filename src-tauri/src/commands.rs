@@ -2,8 +2,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    errors::AppResult, filter::Filter, manager::AppState, song_filter::SongFilter,
-    song_query::SongWithFilters,
+    errors::AppResult, filter::Filter, song_filter::SongFilter, song_query::SongWithFilters,
+    AppState,
 };
 
 #[derive(Clone, Serialize)]

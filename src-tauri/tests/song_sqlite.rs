@@ -1,19 +1,16 @@
 pub mod common;
 use crate::common::{sample_songs, setup_db};
-use zmp_lib::{song::SongService, sqlite::SqliteDb};
+use zmp_lib::{song::SongService, sqlite::SqliteImpl};
 
 #[tokio::test]
 async fn integration_add_songs_and_list_songs() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
-    let songs = service.list_songs(&service.pool).await.unwrap();
+    let songs = service.list_songs(&pool).await.unwrap();
     assert_eq!(songs.len(), 3);
     assert_eq!(songs[0].title, "Teardrop");
     assert_eq!(songs[0].extension, "mp3");
@@ -24,15 +21,12 @@ async fn integration_add_songs_and_list_songs() {
 #[tokio::test]
 async fn integration_get_by_id_returns_matching_song() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
-    let song = service.get_song_by_id(&service.pool, 2).await.unwrap();
+    let song = service.get_song_by_id(&pool, 2).await.unwrap();
     assert_eq!(song.title, "Windowlicker");
     assert_eq!(song.artist, "Aphex Twin");
     assert_eq!(song.extension, "mp4")
@@ -41,13 +35,10 @@ async fn integration_get_by_id_returns_matching_song() {
 #[tokio::test]
 async fn integration_get_by_id_returns_error_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    let err = service
-        .get_song_by_id(&service.pool, 999)
-        .await
-        .unwrap_err();
+    let err = service.get_song_by_id(&pool, 999).await.unwrap_err();
     assert_eq!(
         err.to_string(),
         "no rows returned by a query that expected to return at least one row"
@@ -57,16 +48,13 @@ async fn integration_get_by_id_returns_error_when_missing() {
 #[tokio::test]
 async fn integration_get_by_title_artist_returns_matching_song() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
     let song = service
-        .get_by_title_artist(&service.pool, "Roygbiv", "Boards of Canada")
+        .get_by_title_artist(&pool, "Roygbiv", "Boards of Canada")
         .await
         .unwrap();
 
@@ -77,11 +65,11 @@ async fn integration_get_by_title_artist_returns_matching_song() {
 #[tokio::test]
 async fn integration_get_by_title_artist_returns_error_when_missing() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
     let err = service
-        .get_by_title_artist(&service.pool, "Missing", "Nobody")
+        .get_by_title_artist(&pool, "Missing", "Nobody")
         .await
         .unwrap_err();
 
@@ -93,8 +81,7 @@ async fn integration_get_by_title_artist_returns_error_when_missing() {
 
 #[tokio::test]
 async fn integration_search_by_filters_in_memory_input() {
-    let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
     let songs = sample_songs();
@@ -111,7 +98,7 @@ async fn integration_search_by_filters_in_memory_input() {
 #[tokio::test]
 async fn integration_search_by_db_and_memory_results_match() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
     let songs = sample_songs();
@@ -120,10 +107,10 @@ async fn integration_search_by_db_and_memory_results_match() {
         .await
         .unwrap();
 
-    service.add_songs(&service.pool, songs).await.unwrap();
+    service.add_songs(&pool, songs).await.unwrap();
 
     let results_db = service
-        .search_by_db(&service.pool, &["boards", "1998"], 10)
+        .search_by_db(&pool, &["boards", "1998"], 10)
         .await
         .unwrap();
 
@@ -140,10 +127,7 @@ async fn integration_search_by_db_and_memory_results_match() {
         .await
         .unwrap();
 
-    let results_db = service
-        .search_by_db(&service.pool, &["19"], 10)
-        .await
-        .unwrap();
+    let results_db = service.search_by_db(&pool, &["19"], 10).await.unwrap();
 
     assert_eq!(results_memory.len(), 3);
     assert_eq!(results_memory[0].title, "Roygbiv");
@@ -164,8 +148,7 @@ async fn integration_search_by_db_and_memory_results_match() {
 
 #[tokio::test]
 async fn integration_search_by_honors_max_results() {
-    let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
     let songs = sample_songs();
@@ -177,31 +160,25 @@ async fn integration_search_by_honors_max_results() {
 #[tokio::test]
 async fn integration_search_by_db_returns_empty_when_words_are_empty() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
-    let results = service.search_by_db(&service.pool, &[], 10).await.unwrap();
+    let results = service.search_by_db(&pool, &[], 10).await.unwrap();
     assert!(results.is_empty());
 }
 
 #[tokio::test]
 async fn integration_search_by_db_finds_matching_rows() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
     let results = service
-        .search_by_db(&service.pool, &["massive", "attack"], 10)
+        .search_by_db(&pool, &["massive", "attack"], 10)
         .await
         .unwrap();
 
@@ -212,31 +189,22 @@ async fn integration_search_by_db_finds_matching_rows() {
 #[tokio::test]
 async fn integration_search_by_db_honors_max_results() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
-    let results = service
-        .search_by_db(&service.pool, &["1998"], 1)
-        .await
-        .unwrap();
+    let results = service.search_by_db(&pool, &["1998"], 1).await.unwrap();
     assert_eq!(results.len(), 1);
 }
 
 #[tokio::test]
 async fn integration_replace_songs_replaces_existing_library_contents() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
-    service
-        .add_songs(&service.pool, sample_songs())
-        .await
-        .unwrap();
+    service.add_songs(&pool, sample_songs()).await.unwrap();
 
     let replacement = vec![crate::common::song(
         0,
@@ -251,12 +219,9 @@ async fn integration_replace_songs_replaces_existing_library_contents() {
         "flac",
     )];
 
-    service
-        .replace_songs(&service.pool, replacement)
-        .await
-        .unwrap();
+    service.replace_songs(&pool, replacement).await.unwrap();
 
-    let songs = service.list_songs(&service.pool).await.unwrap();
+    let songs = service.list_songs(&pool).await.unwrap();
 
     assert_eq!(songs.len(), 1);
     assert_eq!(songs[0].title, "Archangel");
@@ -266,12 +231,12 @@ async fn integration_replace_songs_replaces_existing_library_contents() {
 #[tokio::test]
 async fn integration_replace_songs_allows_duplicate_title_artist_with_different_paths() {
     let pool = setup_db().await;
-    let sqlite = SqliteDb { pool };
+    let sqlite = SqliteImpl {};
     let service = SongService::new(sqlite);
 
     service
         .replace_songs(
-            &service.pool,
+            &pool,
             vec![
                 crate::common::song(
                     0,
@@ -302,7 +267,7 @@ async fn integration_replace_songs_allows_duplicate_title_artist_with_different_
         .await
         .unwrap();
 
-    let songs = service.list_songs(&service.pool).await.unwrap();
+    let songs = service.list_songs(&pool).await.unwrap();
 
     assert_eq!(songs.len(), 2);
     assert_eq!(songs[0].title, "Freak On a Leash");
