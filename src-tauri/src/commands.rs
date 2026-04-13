@@ -49,6 +49,12 @@ keybind_commands!(
     (get_next_keybind, set_next_keybind),
     (get_previous_keybind, set_previous_keybind),
     (get_play_pause_keybind, set_play_pause_keybind),
+    (get_increase_volume_keybind, set_increase_volume_keybind),
+    (get_decrease_volume_keybind, set_decrease_volume_keybind),
+    (get_seek_forward_keybind, set_seek_forward_keybind),
+    (get_seek_backward_keybind, set_seek_backward_keybind),
+    (get_filter_menu_keybind, set_filter_menu_keybind),
+    (get_song_filter_menu_keybind, set_song_filter_menu_keybind),
 );
 
 #[tauri::command]
@@ -203,6 +209,30 @@ pub async fn set_current_song_seek(
 }
 
 #[tauri::command]
+pub async fn increase_current_song_seek_by_seconds(
+    state: tauri::State<'_, AppState>,
+    seek_value: u64,
+) -> AppResult<()> {
+    state
+        .zmp
+        .increase_current_song_seek_by_seconds(seek_value)
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn decrease_current_song_seek_by_seconds(
+    state: tauri::State<'_, AppState>,
+    seek_value: u64,
+) -> AppResult<()> {
+    state
+        .zmp
+        .decrease_current_song_seek_by_seconds(seek_value)
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_play_pause(state: tauri::State<'_, AppState>) -> AppResult<bool> {
     Ok(state.zmp.get_play_pause().await)
 }
@@ -221,6 +251,24 @@ pub async fn get_volume(state: tauri::State<'_, AppState>) -> AppResult<rodio::F
 #[tauri::command]
 pub async fn set_volume(state: tauri::State<'_, AppState>, volume: rodio::Float) -> AppResult<()> {
     state.zmp.set_volume(volume).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn increase_volume_by(
+    state: tauri::State<'_, AppState>,
+    volume: rodio::Float,
+) -> AppResult<()> {
+    state.zmp.increase_volume_by(volume).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn decrease_volume_by(
+    state: tauri::State<'_, AppState>,
+    volume: rodio::Float,
+) -> AppResult<()> {
+    state.zmp.decrease_volume_by(volume).await?;
     Ok(())
 }
 

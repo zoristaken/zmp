@@ -387,6 +387,20 @@ where
             .await
     }
 
+    pub async fn increase_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
+        let seek_value = { self.lock_player()?.seek_pos() };
+        let new_seek_value = seek_value.as_secs() + seconds;
+
+        self.set_current_song_seek(new_seek_value as usize).await
+    }
+
+    pub async fn decrease_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
+        let seek_value = { self.lock_player()?.seek_pos() };
+        let new_seek_value = seek_value.as_secs() - seconds;
+
+        self.set_current_song_seek(new_seek_value as usize).await
+    }
+
     pub async fn set_current_song_seek(&self, seek_value: usize) -> anyhow::Result<()> {
         self.setting
             .set_current_song_seek(&self.pool, seek_value)
@@ -411,6 +425,22 @@ where
 
     pub async fn get_volume(&self) -> rodio::Float {
         self.setting.get_saved_volume_value(&self.pool).await
+    }
+
+    pub async fn increase_volume_by(&self, value: rodio::Float) -> anyhow::Result<()> {
+        let current_volume = { self.lock_player()?.get_volume() };
+
+        let new_volume = current_volume + value;
+
+        self.set_volume(new_volume).await
+    }
+
+    pub async fn decrease_volume_by(&self, value: rodio::Float) -> anyhow::Result<()> {
+        let current_volume = { self.lock_player()?.get_volume() };
+
+        let new_volume = current_volume - value;
+
+        self.set_volume(new_volume).await
     }
 
     pub async fn set_volume(&self, volume: rodio::Float) -> anyhow::Result<()> {
@@ -572,5 +602,11 @@ where
         (get_next_keybind, set_next_keybind),
         (get_previous_keybind, set_previous_keybind),
         (get_play_pause_keybind, set_play_pause_keybind),
+        (get_increase_volume_keybind, set_increase_volume_keybind),
+        (get_decrease_volume_keybind, set_decrease_volume_keybind),
+        (get_seek_forward_keybind, set_seek_forward_keybind),
+        (get_seek_backward_keybind, set_seek_backward_keybind),
+        (get_filter_menu_keybind, set_filter_menu_keybind),
+        (get_song_filter_menu_keybind, set_song_filter_menu_keybind),
     );
 }
