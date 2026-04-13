@@ -1,17 +1,29 @@
+use crate::filter::Filter;
 use crate::search_blob::build_search_blob;
 use crate::song::Song;
+use std::borrow::Cow;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use id3::TagLike;
-use lofty::file::AudioFile;
-use lofty::tag::TagType;
+use lofty::aac::AacFile;
+use lofty::config::{ParseOptions, WriteOptions};
+use lofty::file::{AudioFile, FileType, TaggedFileExt};
+use lofty::id3::v2::Id3v2Tag;
+use lofty::iff::wav::WavFile;
+use lofty::mp4::{Atom, AtomData, AtomIdent, Ilst, Mp4File};
+use lofty::mpeg::MpegFile;
+use lofty::ogg::{OpusFile, SpeexFile, VorbisFile};
+use lofty::tag::{ItemValue, TagType};
+use lofty::{ape::ApeFile, flac::FlacFile};
 
 use lofty::{
-    file::TaggedFileExt,
     probe::Probe,
     tag::{Accessor, ItemKey},
 };
 use walkdir::WalkDir;
+
+const FILTER_TAG_KEY: &str = "ZMP_FILTERS";
 
 #[derive(Debug)]
 struct SongMetadata {
@@ -158,6 +170,306 @@ impl MetadataParser {
             }
         }
         Ok(songs)
+    }
+
+    pub fn add_song_filters_metadata(
+        &self,
+        file_path: &Path,
+        filters: Vec<Filter>,
+    ) -> anyhow::Result<()> {
+        let filters_string = filters
+            .iter()
+            .map(|f| f.name.to_string())
+            .collect::<Vec<_>>()
+            .join("|");
+
+        let file_type = self.detect_file_type(file_path)?;
+
+        match file_type {
+            FileType::Aac | FileType::Mpeg | FileType::Wav => {
+                self.write_id3_filters(file_path, FILTER_TAG_KEY, &filters_string)?
+            }
+            FileType::Flac => {
+                self.write_flac_filters(file_path, FILTER_TAG_KEY, &filters_string)?
+            }
+            FileType::Vorbis => {
+                self.write_vorbis_filters(file_path, FILTER_TAG_KEY, &filters_string)?
+            }
+            FileType::Opus => {
+                self.write_opus_filters(file_path, FILTER_TAG_KEY, &filters_string)?
+            }
+            FileType::Speex => {
+                self.write_speex_filters(file_path, FILTER_TAG_KEY, &filters_string)?
+            }
+            FileType::Mp4 => self.write_mp4_filters(file_path, FILTER_TAG_KEY, &filters_string)?,
+            FileType::Ape => self.write_ape_filters(file_path, FILTER_TAG_KEY, &filters_string)?,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Custom metadata is not supported for {:?} files",
+                    file_type
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn get_song_filters_metadata(&self, file_path: &Path) -> anyhow::Result<Vec<Filter>> {
+        let file_type = self.detect_file_type(file_path)?;
+
+        let filters_string = match file_type {
+            FileType::Aac | FileType::Mpeg | FileType::Wav => {
+                self.read_id3_filters(file_path, FILTER_TAG_KEY)?
+            }
+            FileType::Flac => self.read_flac_filters(file_path, FILTER_TAG_KEY)?,
+            FileType::Vorbis => self.read_vorbis_filters(file_path, FILTER_TAG_KEY)?,
+            FileType::Opus => self.read_opus_filters(file_path, FILTER_TAG_KEY)?,
+            FileType::Speex => self.read_speex_filters(file_path, FILTER_TAG_KEY)?,
+            FileType::Mp4 => self.read_mp4_filters(file_path, FILTER_TAG_KEY)?,
+            FileType::Ape => self.read_ape_filters(file_path, FILTER_TAG_KEY)?,
+            _ => return Ok(vec![]),
+        };
+
+        Ok(Self::parse_filters_string(filters_string.as_deref()))
+    }
+
+    fn detect_file_type(&self, file_path: &Path) -> anyhow::Result<FileType> {
+        Probe::open(file_path)?
+            .guess_file_type()?
+            .file_type()
+            .ok_or_else(|| anyhow::anyhow!("Failed to detect file type for {:?}", file_path))
+    }
+
+    fn parse_filters_string(filters_string: Option<&str>) -> Vec<Filter> {
+        filters_string
+            .unwrap_or_default()
+            .split('|')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|name| Filter {
+                id: 0,
+                name: name.to_string(),
+            })
+            .collect()
+    }
+
+    fn write_id3_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        match self.detect_file_type(file_path)? {
+            FileType::Aac => {
+                let mut reader = File::open(file_path)?;
+                let mut file = AacFile::read_from(&mut reader, ParseOptions::new())?;
+                let mut tag = file.id3v2_mut().map(std::mem::take).unwrap_or_default();
+                self.upsert_id3_filters_tag(&mut tag, key, value);
+                file.set_id3v2(tag);
+                file.save_to_path(file_path, WriteOptions::default())?;
+                Ok(())
+            }
+            FileType::Mpeg => {
+                let mut reader = File::open(file_path)?;
+                let mut file = MpegFile::read_from(&mut reader, ParseOptions::new())?;
+                let mut tag = file.id3v2_mut().map(std::mem::take).unwrap_or_default();
+                self.upsert_id3_filters_tag(&mut tag, key, value);
+                file.set_id3v2(tag);
+                file.save_to_path(file_path, WriteOptions::default())?;
+                Ok(())
+            }
+            FileType::Wav => {
+                let mut reader = File::open(file_path)?;
+                let mut file = WavFile::read_from(&mut reader, ParseOptions::new())?;
+                let mut tag = file.id3v2_mut().map(std::mem::take).unwrap_or_default();
+                self.upsert_id3_filters_tag(&mut tag, key, value);
+                file.set_id3v2(tag);
+                file.save_to_path(file_path, WriteOptions::default())?;
+                Ok(())
+            }
+            file_type => Err(anyhow::anyhow!(
+                "Expected an ID3-backed file, got {:?}",
+                file_type
+            )),
+        }
+    }
+
+    fn write_flac_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        let mut reader = File::open(file_path)?;
+        let mut file = FlacFile::read_from(&mut reader, ParseOptions::new())?;
+        let mut tag = file
+            .vorbis_comments_mut()
+            .map(std::mem::take)
+            .unwrap_or_default();
+        let _ = tag.remove(key);
+        if !value.is_empty() {
+            tag.insert(key.to_string(), value.to_string());
+        }
+        file.set_vorbis_comments(tag);
+        file.save_to_path(file_path, WriteOptions::default())?;
+        Ok(())
+    }
+
+    fn write_vorbis_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        let mut reader = File::open(file_path)?;
+        let mut file = VorbisFile::read_from(&mut reader, ParseOptions::new())?;
+        let tag = file.vorbis_comments_mut();
+        let _ = tag.remove(key);
+        if !value.is_empty() {
+            tag.insert(key.to_string(), value.to_string());
+        }
+        file.save_to_path(file_path, WriteOptions::default())?;
+        Ok(())
+    }
+
+    fn write_opus_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        let mut reader = File::open(file_path)?;
+        let mut file = OpusFile::read_from(&mut reader, ParseOptions::new())?;
+        let tag = file.vorbis_comments_mut();
+        let _ = tag.remove(key);
+        if !value.is_empty() {
+            tag.insert(key.to_string(), value.to_string());
+        }
+        file.save_to_path(file_path, WriteOptions::default())?;
+        Ok(())
+    }
+
+    fn write_speex_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        let mut reader = File::open(file_path)?;
+        let mut file = SpeexFile::read_from(&mut reader, ParseOptions::new())?;
+        let tag = file.vorbis_comments_mut();
+        let _ = tag.remove(key);
+        if !value.is_empty() {
+            tag.insert(key.to_string(), value.to_string());
+        }
+        file.save_to_path(file_path, WriteOptions::default())?;
+        Ok(())
+    }
+
+    fn write_mp4_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        let mut reader = File::open(file_path)?;
+        let mut file = Mp4File::read_from(&mut reader, ParseOptions::new())?;
+        let mut ilst = file
+            .ilst_mut()
+            .map(std::mem::take)
+            .unwrap_or_else(Ilst::new);
+        let ident = AtomIdent::Freeform {
+            mean: Cow::Borrowed("com.apple.iTunes"),
+            name: Cow::Owned(key.to_string()),
+        };
+        let _ = ilst.remove(&ident);
+        if !value.is_empty() {
+            ilst.insert(Atom::new(ident, AtomData::UTF8(value.to_string())));
+        }
+        file.set_ilst(ilst);
+        file.save_to_path(file_path, WriteOptions::default())?;
+        Ok(())
+    }
+
+    fn write_ape_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+        let mut reader = File::open(file_path)?;
+        let mut file = ApeFile::read_from(&mut reader, ParseOptions::new())?;
+        let mut tag = file.ape_mut().map(std::mem::take).unwrap_or_default();
+        tag.remove(key);
+        if !value.is_empty() {
+            tag.insert(lofty::ape::ApeItem::new(
+                key.to_string(),
+                ItemValue::Text(value.to_string()),
+            )?);
+        }
+        file.set_ape(tag);
+        file.save_to_path(file_path, WriteOptions::default())?;
+        Ok(())
+    }
+
+    fn read_id3_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        match self.detect_file_type(file_path)? {
+            FileType::Aac => {
+                let mut reader = File::open(file_path)?;
+                let file = AacFile::read_from(&mut reader, ParseOptions::new())?;
+                Ok(file
+                    .id3v2()
+                    .and_then(|tag| tag.get_user_text(key))
+                    .map(str::to_string))
+            }
+            FileType::Mpeg => {
+                let mut reader = File::open(file_path)?;
+                let file = MpegFile::read_from(&mut reader, ParseOptions::new())?;
+                Ok(file
+                    .id3v2()
+                    .and_then(|tag| tag.get_user_text(key))
+                    .map(str::to_string))
+            }
+            FileType::Wav => {
+                let mut reader = File::open(file_path)?;
+                let file = WavFile::read_from(&mut reader, ParseOptions::new())?;
+                Ok(file
+                    .id3v2()
+                    .and_then(|tag| tag.get_user_text(key))
+                    .map(str::to_string))
+            }
+            file_type => Err(anyhow::anyhow!(
+                "Expected an ID3-backed file, got {:?}",
+                file_type
+            )),
+        }
+    }
+
+    fn read_flac_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        let mut reader = File::open(file_path)?;
+        let file = FlacFile::read_from(&mut reader, ParseOptions::new())?;
+        Ok(file
+            .vorbis_comments()
+            .and_then(|tag| tag.get(key))
+            .map(str::to_string))
+    }
+
+    fn read_vorbis_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        let mut reader = File::open(file_path)?;
+        let file = VorbisFile::read_from(&mut reader, ParseOptions::new())?;
+        Ok(file.vorbis_comments().get(key).map(str::to_string))
+    }
+
+    fn read_opus_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        let mut reader = File::open(file_path)?;
+        let file = OpusFile::read_from(&mut reader, ParseOptions::new())?;
+        Ok(file.vorbis_comments().get(key).map(str::to_string))
+    }
+
+    fn read_speex_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        let mut reader = File::open(file_path)?;
+        let file = SpeexFile::read_from(&mut reader, ParseOptions::new())?;
+        Ok(file.vorbis_comments().get(key).map(str::to_string))
+    }
+
+    fn read_mp4_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        let mut reader = File::open(file_path)?;
+        let file = Mp4File::read_from(&mut reader, ParseOptions::new())?;
+        let ident = AtomIdent::Freeform {
+            mean: Cow::Borrowed("com.apple.iTunes"),
+            name: Cow::Borrowed(key),
+        };
+
+        Ok(file.ilst().and_then(|ilst| {
+            ilst.get(&ident).and_then(|atom| {
+                atom.data().find_map(|data| match data {
+                    AtomData::UTF8(value) | AtomData::UTF16(value) => Some(value.clone()),
+                    _ => None,
+                })
+            })
+        }))
+    }
+
+    fn read_ape_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
+        let mut reader = File::open(file_path)?;
+        let file = ApeFile::read_from(&mut reader, ParseOptions::new())?;
+        Ok(file
+            .ape()
+            .and_then(|tag| tag.get(key))
+            .and_then(|item| item.value().text())
+            .map(str::to_string))
+    }
+
+    fn upsert_id3_filters_tag(&self, tag: &mut Id3v2Tag, key: &str, value: &str) {
+        tag.remove_user_text(key);
+        if !value.is_empty() {
+            let _ = tag.insert_user_text(key.to_string(), value.to_string());
+        }
     }
 }
 

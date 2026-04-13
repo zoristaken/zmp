@@ -22,6 +22,7 @@ const FOCUS_SEARCH_KEYBIND: &str = "focus_search_kb";
 const SETTINGS_KEYBIND: &str = "settings_kb";
 const INDEX_VALUE: &str = "index_value";
 const CURRENT_SEEK_VALUE: &str = "current_seek_value";
+const PENDING_SONG_METADATA_SYNC_PATHS: &str = "pending_song_metadata_sync_paths";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
 pub const DEFAULT_SONG_LIST_LIMIT: i32 = 10_000;
 
@@ -219,6 +220,41 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.set(acquiree, CURRENT_SEEK_VALUE, &value.to_string())
+            .await
+    }
+
+    pub async fn get_pending_song_metadata_sync_paths<'a, A>(&self, acquiree: A) -> Vec<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self
+            .get_value(acquiree, PENDING_SONG_METADATA_SYNC_PATHS)
+            .await
+        {
+            Ok(value) => serde_json::from_str::<Vec<String>>(&value).unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    pub async fn set_pending_song_metadata_sync_paths<'a, A>(
+        &self,
+        acquiree: A,
+        file_paths: &[String],
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let mut normalized = file_paths
+            .iter()
+            .map(|path| path.trim())
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        normalized.sort();
+        normalized.dedup();
+
+        let value = serde_json::to_string(&normalized)?;
+        self.set(acquiree, PENDING_SONG_METADATA_SYNC_PATHS, &value)
             .await
     }
 

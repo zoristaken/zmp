@@ -117,6 +117,53 @@ async fn integration_saved_search_blob_roundtrip() {
 }
 
 #[tokio::test]
+async fn integration_pending_song_metadata_sync_paths_roundtrip() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    service
+        .set_pending_song_metadata_sync_paths(
+            &pool,
+            &[
+                "/music/b.flac".to_string(),
+                "/music/a.flac".to_string(),
+                "/music/b.flac".to_string(),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let actual = service.get_pending_song_metadata_sync_paths(&pool).await;
+
+    assert_eq!(
+        actual,
+        vec!["/music/a.flac".to_string(), "/music/b.flac".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn integration_pending_song_metadata_sync_paths_returns_empty_for_invalid_json() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    sqlx::query(
+        r#"
+        INSERT INTO setting (key, value)
+        VALUES ('pending_song_metadata_sync_paths', 'definitely-not-json')
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let actual = service.get_pending_song_metadata_sync_paths(&pool).await;
+
+    assert!(actual.is_empty());
+}
+
+#[tokio::test]
 async fn integration_song_list_limit_returns_default_when_missing() {
     let pool = setup_db().await;
     let sqlite = SqliteImpl {};
