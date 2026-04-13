@@ -22,6 +22,7 @@ struct SongMetadata {
     path: String,
     duration: u64,
     remix: Option<String>,
+    ext: String,
 }
 
 struct FallbackMetadata {
@@ -37,7 +38,11 @@ impl MetadataParser {
         Self {}
     }
 
-    fn read_metadata(file_path: &Path) -> anyhow::Result<SongMetadata> {
+    fn should_fetch_metadata_year_id3(&self, year: i32, tag_type: TagType) -> bool {
+        return year == 0 && (tag_type == TagType::Id3v2 || tag_type == TagType::Id3v1);
+    }
+
+    fn read_metadata(&self, file_path: &Path) -> anyhow::Result<SongMetadata> {
         let mut song = SongMetadata {
             title: String::new(),
             artist: String::new(),
@@ -46,6 +51,11 @@ impl MetadataParser {
             remix: None,
             duration: 0,
             path: file_path.to_string_lossy().to_string(),
+            ext: file_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_lowercase(),
         };
 
         let tagged_file = Probe::open(file_path)?.read()?;
@@ -53,7 +63,7 @@ impl MetadataParser {
         let tag = match tagged_file.primary_tag() {
             Some(primary_tag) => primary_tag,
             None => {
-                let fallback_metadata = Self::parse_filename_fallback(file_path)?;
+                let fallback_metadata = self.parse_filename_fallback(file_path)?;
                 song.artist = fallback_metadata.artist;
                 song.title = fallback_metadata.title;
                 song.duration = tagged_file.properties().duration().as_secs();
@@ -68,15 +78,13 @@ impl MetadataParser {
         song.year = Some(tag.date().unwrap_or_default().year.into());
         song.duration = tagged_file.properties().duration().as_secs();
 
-        if song.year.unwrap_or_default() == 0
-            && (tag.tag_type() == TagType::Id3v2 || tag.tag_type() == TagType::Id3v1)
-        {
+        if self.should_fetch_metadata_year_id3(song.year.unwrap_or_default(), tag.tag_type()) {
             let tag = id3::Tag::read_from_path(file_path)?;
             song.year = tag.year();
         }
 
         if song.title.is_empty() || song.artist.is_empty() {
-            let fallback_metadata = Self::parse_filename_fallback(file_path)?;
+            let fallback_metadata = self.parse_filename_fallback(file_path)?;
             if song.title.is_empty() {
                 song.title = fallback_metadata.title;
             }
@@ -88,7 +96,7 @@ impl MetadataParser {
         Ok(song)
     }
 
-    fn parse_filename_fallback(file_path: &Path) -> anyhow::Result<FallbackMetadata> {
+    fn parse_filename_fallback(&self, file_path: &Path) -> anyhow::Result<FallbackMetadata> {
         let no_ext = file_path.with_extension("");
 
         let file_name = no_ext
@@ -115,40 +123,37 @@ impl MetadataParser {
             .filter_map(Result::ok)
             .filter(|e| e.file_type().is_file())
         {
-            let path = entry.path();
-            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                match Self::read_metadata(path) {
-                    Ok(metadata) => {
-                        let m_title = metadata.title;
-                        let m_artist = metadata.artist;
-                        let m_album = metadata.album.unwrap_or_default();
-                        let m_release_year = metadata.year.unwrap_or_default();
-                        let m_remix = metadata.remix.unwrap_or_default();
+            match self.read_metadata(entry.path()) {
+                Ok(metadata) => {
+                    let m_title = metadata.title;
+                    let m_artist = metadata.artist;
+                    let m_album = metadata.album.unwrap_or_default();
+                    let m_release_year = metadata.year.unwrap_or_default();
+                    let m_remix = metadata.remix.unwrap_or_default();
 
-                        let search_blob = build_search_blob([
-                            m_title.as_str(),
-                            m_artist.as_str(),
-                            &m_album,
-                            &m_release_year.to_string(),
-                            m_remix.as_str(),
-                        ]);
+                    let search_blob = build_search_blob([
+                        &m_title,
+                        &m_artist,
+                        &m_album,
+                        &m_release_year.to_string(),
+                        &m_remix,
+                    ]);
 
-                        songs.push(Song {
-                            id: 0,
-                            title: m_title,
-                            artist: m_artist,
-                            release_year: m_release_year,
-                            album: m_album,
-                            remix: m_remix,
-                            search_blob,
-                            file_path: metadata.path,
-                            duration: metadata.duration as i64,
-                            extension: ext.to_lowercase(),
-                        });
-                    }
-                    Err(_) => {
-                        continue;
-                    }
+                    songs.push(Song {
+                        id: 0,
+                        title: m_title,
+                        artist: m_artist,
+                        release_year: m_release_year,
+                        album: m_album,
+                        remix: m_remix,
+                        search_blob,
+                        file_path: metadata.path,
+                        duration: metadata.duration as i64,
+                        extension: metadata.ext,
+                    });
+                }
+                Err(_) => {
+                    continue;
                 }
             }
         }
@@ -165,7 +170,7 @@ mod tests {
     fn parse_filename_fallback_parses_artist_and_title() {
         let path = Path::new("Massive Attack - Teardrop.mp3");
 
-        let result = MetadataParser::parse_filename_fallback(path).unwrap();
+        let result = MetadataParser::new().parse_filename_fallback(path).unwrap();
 
         assert_eq!(result.artist, "Massive Attack");
         assert_eq!(result.title, "Teardrop");
@@ -175,7 +180,7 @@ mod tests {
     fn parse_filename_fallback_trims_whitespace() {
         let path = Path::new("  Massive Attack   -   Teardrop  .mp3");
 
-        let result = MetadataParser::parse_filename_fallback(path).unwrap();
+        let result = MetadataParser::new().parse_filename_fallback(path).unwrap();
 
         assert_eq!(result.artist, "Massive Attack");
         assert_eq!(result.title, "Teardrop");
@@ -185,7 +190,7 @@ mod tests {
     fn parse_filename_fallback_errors_when_separator_missing() {
         let path = Path::new("Teardrop.mp3");
 
-        let result = MetadataParser::parse_filename_fallback(path);
+        let result = MetadataParser::new().parse_filename_fallback(path);
 
         assert!(result.is_err());
     }
