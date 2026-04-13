@@ -20,6 +20,12 @@ const SHUFFLE_KEYBIND: &str = "shuffle_kb";
 const MUTE_KEYBIND: &str = "mute_kb";
 const FOCUS_SEARCH_KEYBIND: &str = "focus_search_kb";
 const SETTINGS_KEYBIND: &str = "settings_kb";
+const INCREASE_VOLUME_KEYBIND: &str = "increase_volume_kb";
+const DECREASE_VOLUME_KEYBIND: &str = "decrease_volume_kb";
+const SEEK_FORWARD_KEYBIND: &str = "seek_forward_kb";
+const SEEK_BACKWARD_KEYBIND: &str = "seek_backward_kb";
+const FILTER_MENU_KEYBIND: &str = "filter_menu_kb";
+const SONG_FILTER_MENU_KEYBIND: &str = "song_filter_menu_kb";
 const INDEX_VALUE: &str = "index_value";
 const CURRENT_SEEK_VALUE: &str = "current_seek_value";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
@@ -264,11 +270,11 @@ where
         self.get_bool(acquiree, PROCESSED_MUSIC_FLAG).await
     }
 
-    pub async fn set_settings_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
+    pub async fn set_settings_keybind<'a, A>(&self, acquiree: A, value: &str) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.set(acquiree, SETTINGS_KEYBIND, key).await
+        self.set(acquiree, SETTINGS_KEYBIND, value).await
     }
 
     pub async fn get_settings_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
@@ -292,108 +298,6 @@ where
         self.get_bool(acquiree, PLAY_PAUSE_FLAG).await
     }
 
-    pub async fn get_focus_search_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, FOCUS_SEARCH_KEYBIND).await
-    }
-
-    pub async fn set_focus_search_keybind<'a, A>(
-        &self,
-        acquiree: A,
-        key: &str,
-    ) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, FOCUS_SEARCH_KEYBIND, key).await
-    }
-
-    pub async fn get_mute_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, MUTE_KEYBIND).await
-    }
-
-    pub async fn set_mute_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, MUTE_KEYBIND, key).await
-    }
-
-    pub async fn get_repeat_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, REPEAT_KEYBIND).await
-    }
-
-    pub async fn set_repeat_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, REPEAT_KEYBIND, key).await
-    }
-
-    pub async fn get_shuffle_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, SHUFFLE_KEYBIND).await
-    }
-
-    pub async fn set_shuffle_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, SHUFFLE_KEYBIND, key).await
-    }
-
-    pub async fn set_previous_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, PREVIOUS_KEYBIND, key).await
-    }
-
-    pub async fn get_previous_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, PREVIOUS_KEYBIND).await
-    }
-
-    pub async fn set_next_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, NEXT_KEYBIND, key).await
-    }
-
-    pub async fn get_next_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, NEXT_KEYBIND).await
-    }
-
-    pub async fn set_play_pause_keybind<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<()>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.set(acquiree, PLAY_PAUSE_KEYBIND, key).await
-    }
-
-    pub async fn get_play_pause_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
-    where
-        A: Acquire<'a, Database = DB> + Send,
-    {
-        self.get_value(acquiree, PLAY_PAUSE_KEYBIND).await
-    }
-
     pub async fn set_random_play<'a, A>(&self, acquiree: A, flag: bool) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send,
@@ -407,6 +311,232 @@ where
     {
         self.get_bool(acquiree, RANDOM_PLAY_FLAG).await
     }
+
+    pub async fn get_focus_search_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, FOCUS_SEARCH_KEYBIND).await
+    }
+
+    pub async fn set_focus_search_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, FOCUS_SEARCH_KEYBIND, value).await
+    }
+
+    pub async fn get_mute_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, MUTE_KEYBIND).await
+    }
+
+    pub async fn set_mute_keybind<'a, A>(&self, acquiree: A, value: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, MUTE_KEYBIND, value).await
+    }
+
+    pub async fn get_repeat_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, REPEAT_KEYBIND).await
+    }
+
+    pub async fn set_repeat_keybind<'a, A>(&self, acquiree: A, value: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, REPEAT_KEYBIND, value).await
+    }
+
+    pub async fn get_shuffle_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, SHUFFLE_KEYBIND).await
+    }
+
+    pub async fn set_shuffle_keybind<'a, A>(&self, acquiree: A, value: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, SHUFFLE_KEYBIND, value).await
+    }
+
+    pub async fn set_previous_keybind<'a, A>(&self, acquiree: A, value: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, PREVIOUS_KEYBIND, value).await
+    }
+
+    pub async fn get_previous_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, PREVIOUS_KEYBIND).await
+    }
+
+    pub async fn set_next_keybind<'a, A>(&self, acquiree: A, value: &str) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, NEXT_KEYBIND, value).await
+    }
+
+    pub async fn get_next_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, NEXT_KEYBIND).await
+    }
+
+    pub async fn set_play_pause_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, PLAY_PAUSE_KEYBIND, value).await
+    }
+
+    pub async fn get_play_pause_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, PLAY_PAUSE_KEYBIND).await
+    }
+
+    pub async fn set_increase_volume_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, INCREASE_VOLUME_KEYBIND, value).await
+    }
+
+    pub async fn get_increase_volume_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, INCREASE_VOLUME_KEYBIND).await
+    }
+
+    pub async fn set_decrease_volume_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, DECREASE_VOLUME_KEYBIND, value).await
+    }
+
+    pub async fn get_decrease_volume_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, DECREASE_VOLUME_KEYBIND).await
+    }
+
+    pub async fn set_seek_forward_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, SEEK_FORWARD_KEYBIND, value).await
+    }
+
+    pub async fn get_seek_forward_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, SEEK_FORWARD_KEYBIND).await
+    }
+
+    pub async fn set_seek_backward_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, SEEK_BACKWARD_KEYBIND, value).await
+    }
+
+    pub async fn get_seek_backward_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, SEEK_BACKWARD_KEYBIND).await
+    }
+
+    pub async fn set_filter_menu_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, FILTER_MENU_KEYBIND, value).await
+    }
+
+    pub async fn get_filter_menu_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, FILTER_MENU_KEYBIND).await
+    }
+
+    pub async fn set_song_filter_menu_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, SONG_FILTER_MENU_KEYBIND, value).await
+    }
+
+    pub async fn get_song_filter_menu_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, SONG_FILTER_MENU_KEYBIND).await
+    }
+
+    //TODO (zor): add more keybind with frontend support:
+    //X increase/decrease volume by 5 or 10% ? keybind
+    //X forwards/backwards in song by 5 or 10 secs? keybind
+    //X open filter manager keybind:
+    //      make focus search bar work on filter manager
+    //      make back and forward keybind work on existing filters
+    //      ?add delete keybind
+    //X open current song filter manager keybind:
+    //      keybind to swap between current available filters
+    //      make back and forward keybind work on both sub menus
+    //      ?add delete/add keybind, depending on the sub menu
 
     async fn persist_started_track_in(
         &self,
