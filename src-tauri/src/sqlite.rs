@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
-    Acquire, Row, Sqlite, SqlitePool,
+    Acquire, QueryBuilder, Row, Sqlite, SqlitePool,
 };
 
 use crate::{
@@ -154,8 +154,8 @@ impl SongRepository<Sqlite> for SqliteImpl {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE ",
         );
-        //TODO: after using the app, verify if searching by substrings actually happens
-        //I have a feeling we can improve the performance by moving to a prefix search
+        //TODO (zor): after using the app, verify if searching by substrings actually happens
+        //I have a feeling we can improve the performance by moving to a fts5 prefix search
         //without any side effects at all
         for (i, word) in words.iter().enumerate() {
             qb.push("search_blob LIKE ");
@@ -242,7 +242,6 @@ impl FilterRepository<Sqlite> for SqliteImpl {
         Ok(filter)
     }
 
-    //TODO: add name index?
     async fn get_by_name<'a, A>(&self, acquiree: A, name: &str) -> anyhow::Result<Filter>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
@@ -372,7 +371,6 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
         Ok(song_filter)
     }
 
-    //TODO: add filter_id index?
     async fn get_by_filter<'a, A>(
         &self,
         acquiree: A,
@@ -393,7 +391,6 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
         Ok(song_filter)
     }
 
-    //TODO: add song_id index?
     async fn get_by_song<'a, A>(&self, acquiree: A, song_id: i32) -> anyhow::Result<Vec<SongFilter>>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
@@ -467,13 +464,20 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
-        fn push_search_blob_conditions(query: &mut String, words: &[&str]) {
-            for (i, _) in words.iter().enumerate() {
+        fn push_search_blob_conditions(
+            query: &mut QueryBuilder<'_, Sqlite>,
+            alias: &str,
+            words: &[&str],
+        ) {
+            for (i, word) in words.iter().enumerate() {
                 if i > 0 {
-                    query.push_str(" AND ");
+                    query.push(" AND ");
                 }
 
-                query.push_str("s.search_blob LIKE ?");
+                query
+                    .push(alias)
+                    .push(".search_blob LIKE ")
+                    .push_bind(format!("%{word}%"));
             }
         }
 
@@ -482,7 +486,7 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
         }
 
         let mut conn = acquiree.acquire().await?;
-        let mut query = String::from(
+        let mut query = QueryBuilder::<Sqlite>::new(
             r#"
             WITH limited_songs AS (
                 SELECT
@@ -501,23 +505,29 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
         );
 
         if !words.is_empty() {
-            query.push_str(" WHERE ");
-            push_search_blob_conditions(&mut query, words);
+            query.push(" WHERE ");
+            push_search_blob_conditions(&mut query, "s", words);
         }
 
-        query.push_str(" ORDER BY ");
-        query.push_str(SONG_SORT_ORDER);
-        query.push_str(
-            r#"
-                LIMIT ?
+        query
+            .push(" ORDER BY ")
+            .push(SONG_SORT_ORDER)
+            .push(
+                r#"
+                LIMIT
+            "#,
+            )
+            .push_bind(max_results)
+            .push(
+                r#"
             ),
             selected_songs AS (
                 SELECT * FROM limited_songs
             "#,
-        );
+            );
 
-        if pinned_song_id.is_some() {
-            query.push_str(
+        if let Some(pinned_song_id) = pinned_song_id {
+            query.push(
                 r#"
                 UNION ALL
                 SELECT
@@ -532,16 +542,17 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
                     s.duration,
                     s.extension
                 FROM song s
-                WHERE s.id = ?
+                WHERE s.id =
                 "#,
             );
+            query.push_bind(pinned_song_id);
 
             if !words.is_empty() {
-                query.push_str(" AND ");
-                push_search_blob_conditions(&mut query, words);
+                query.push(" AND ");
+                push_search_blob_conditions(&mut query, "s", words);
             }
 
-            query.push_str(
+            query.push(
                 r#"
                 AND NOT EXISTS (
                     SELECT 1
@@ -552,7 +563,7 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
             );
         }
 
-        query.push_str(
+        query.push(
             r#"
             )
             SELECT
@@ -574,25 +585,12 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
             ORDER BY
             "#,
         );
-        query.push_str(SONG_SORT_ORDER);
+        query.push(SONG_SORT_ORDER);
 
-        let mut built = sqlx::query_as::<sqlx::Sqlite, SongWithFilterRow>(&query);
-
-        for word in words {
-            built = built.bind(format!("%{}%", word));
-        }
-
-        built = built.bind(max_results);
-
-        if let Some(pinned_song_id) = pinned_song_id {
-            built = built.bind(pinned_song_id);
-
-            for word in words {
-                built = built.bind(format!("%{}%", word));
-            }
-        }
-
-        let rows = built.fetch_all(&mut *conn).await?;
+        let rows = query
+            .build_query_as::<SongWithFilterRow>()
+            .fetch_all(&mut *conn)
+            .await?;
         Ok(group_song_rows(rows))
     }
 }
