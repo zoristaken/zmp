@@ -12,6 +12,7 @@ const SONG_LIST_LIMIT: &str = "song_list_limit";
 const REPEAT_FLAG: &str = "repeat_flag";
 const RANDOM_PLAY_FLAG: &str = "random_play_flag";
 const PLAY_PAUSE_FLAG: &str = "play_pause_flag";
+const ALWAYS_START_PAUSED_FLAG: &str = "always_start_paused_flag";
 const PLAY_PAUSE_KEYBIND: &str = "play_pause_kb";
 const PREVIOUS_KEYBIND: &str = "previous_kb";
 const NEXT_KEYBIND: &str = "next_kb";
@@ -26,6 +27,9 @@ const SEEK_FORWARD_KEYBIND: &str = "seek_forward_kb";
 const SEEK_BACKWARD_KEYBIND: &str = "seek_backward_kb";
 const FILTER_MENU_KEYBIND: &str = "filter_menu_kb";
 const SONG_FILTER_MENU_KEYBIND: &str = "song_filter_menu_kb";
+const KEYBIND_SETTINGS_KEYBIND: &str = "keybind_settings_kb";
+const SWITCH_SONG_FILTER_PANE_KEYBIND: &str = "switch_song_filter_pane_kb";
+const APPLY_SELECTED_FILTER_KEYBIND: &str = "apply_selected_filter_kb";
 const INDEX_VALUE: &str = "index_value";
 const CURRENT_SEEK_VALUE: &str = "current_seek_value";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
@@ -312,6 +316,25 @@ where
         self.get_bool(acquiree, RANDOM_PLAY_FLAG).await
     }
 
+    pub async fn set_always_start_paused<'a, A>(
+        &self,
+        acquiree: A,
+        flag: bool,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set_bool(acquiree, ALWAYS_START_PAUSED_FLAG, flag)
+            .await
+    }
+
+    pub async fn should_always_start_paused<'a, A>(&self, acquiree: A) -> bool
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_bool(acquiree, ALWAYS_START_PAUSED_FLAG).await
+    }
+
     pub async fn get_focus_search_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
     where
         A: Acquire<'a, Database = DB> + Send,
@@ -526,17 +549,69 @@ where
         self.get_value(acquiree, SONG_FILTER_MENU_KEYBIND).await
     }
 
-    //TODO (zor): add more keybind with frontend support:
-    //X increase/decrease volume by 5 or 10% ? keybind
-    //X forwards/backwards in song by 5 or 10 secs? keybind
-    //X open filter manager keybind:
-    //      make focus search bar work on filter manager
-    //      make back and forward keybind work on existing filters
-    //      ?add delete keybind
-    //X open current song filter manager keybind:
-    //      keybind to swap between current available filters
-    //      make back and forward keybind work on both sub menus
-    //      ?add delete/add keybind, depending on the sub menu
+    pub async fn set_keybind_settings_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, KEYBIND_SETTINGS_KEYBIND, value).await
+    }
+
+    pub async fn get_keybind_settings_keybind<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, KEYBIND_SETTINGS_KEYBIND).await
+    }
+
+    pub async fn set_switch_song_filter_pane_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, SWITCH_SONG_FILTER_PANE_KEYBIND, value)
+            .await
+    }
+
+    pub async fn get_switch_song_filter_pane_keybind<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, SWITCH_SONG_FILTER_PANE_KEYBIND)
+            .await
+    }
+
+    pub async fn set_apply_selected_filter_keybind<'a, A>(
+        &self,
+        acquiree: A,
+        value: &str,
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.set(acquiree, APPLY_SELECTED_FILTER_KEYBIND, value)
+            .await
+    }
+
+    pub async fn get_apply_selected_filter_keybind<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.get_value(acquiree, APPLY_SELECTED_FILTER_KEYBIND)
+            .await
+    }
 
     async fn persist_started_track_in(
         &self,

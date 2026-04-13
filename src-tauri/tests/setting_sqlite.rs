@@ -49,6 +49,21 @@ async fn integration_random_play_roundtrip() {
 }
 
 #[tokio::test]
+async fn integration_always_start_paused_roundtrip() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    assert!(!service.should_always_start_paused(&pool).await);
+
+    service.set_always_start_paused(&pool, true).await.unwrap();
+    assert!(service.should_always_start_paused(&pool).await);
+
+    service.set_always_start_paused(&pool, false).await.unwrap();
+    assert!(!service.should_always_start_paused(&pool).await);
+}
+
+#[tokio::test]
 async fn integration_processed_music_folder_roundtrip() {
     let pool = setup_db().await;
     let sqlite = SqliteImpl {};
@@ -171,7 +186,19 @@ async fn integration_keybind_roundtrips() {
     service.set_next_keybind(&pool, "Ctrl+Right").await.unwrap();
     service.set_shuffle_keybind(&pool, "Ctrl+R").await.unwrap();
     service
+        .set_keybind_settings_keybind(&pool, "Ctrl+Shift+K")
+        .await
+        .unwrap();
+    service
         .set_saved_search_blob(&pool, "aphex twin")
+        .await
+        .unwrap();
+    service
+        .set_switch_song_filter_pane_keybind(&pool, "Tab")
+        .await
+        .unwrap();
+    service
+        .set_apply_selected_filter_keybind(&pool, "Enter")
         .await
         .unwrap();
 
@@ -186,6 +213,24 @@ async fn integration_keybind_roundtrips() {
     );
     assert_eq!(service.get_next_keybind(&pool).await.unwrap(), "Ctrl+Right");
     assert_eq!(service.get_shuffle_keybind(&pool).await.unwrap(), "Ctrl+R");
+    assert_eq!(
+        service.get_keybind_settings_keybind(&pool).await.unwrap(),
+        "Ctrl+Shift+K"
+    );
+    assert_eq!(
+        service
+            .get_switch_song_filter_pane_keybind(&pool)
+            .await
+            .unwrap(),
+        "Tab"
+    );
+    assert_eq!(
+        service
+            .get_apply_selected_filter_keybind(&pool)
+            .await
+            .unwrap(),
+        "Enter"
+    );
     assert_eq!(
         service.get_saved_search_blob(&pool).await.unwrap(),
         "aphex twin"

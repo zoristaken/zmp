@@ -55,6 +55,15 @@ keybind_commands!(
     (get_seek_backward_keybind, set_seek_backward_keybind),
     (get_filter_menu_keybind, set_filter_menu_keybind),
     (get_song_filter_menu_keybind, set_song_filter_menu_keybind),
+    (get_keybind_settings_keybind, set_keybind_settings_keybind),
+    (
+        get_switch_song_filter_pane_keybind,
+        set_switch_song_filter_pane_keybind
+    ),
+    (
+        get_apply_selected_filter_keybind,
+        set_apply_selected_filter_keybind
+    ),
 );
 
 #[tauri::command]
@@ -240,6 +249,20 @@ pub async fn get_play_pause(state: tauri::State<'_, AppState>) -> AppResult<bool
 #[tauri::command]
 pub async fn set_play_pause(state: tauri::State<'_, AppState>, is_playing: bool) -> AppResult<()> {
     state.zmp.set_play_pause(is_playing).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_always_start_paused(state: tauri::State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.zmp.get_always_start_paused().await)
+}
+
+#[tauri::command]
+pub async fn set_always_start_paused(
+    state: tauri::State<'_, AppState>,
+    flag: bool,
+) -> AppResult<()> {
+    state.zmp.set_always_start_paused(flag).await?;
     Ok(())
 }
 

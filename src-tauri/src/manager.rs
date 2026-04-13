@@ -198,6 +198,12 @@ where
             .map_err(|e| anyhow::anyhow!(e.to_string()))
     }
 
+    fn current_player_seek_seconds(&self) -> anyhow::Result<usize> {
+        let player = self.lock_player()?;
+
+        Ok(player.seek_pos().as_secs() as usize)
+    }
+
     fn sync_song_list(&self, songs: Vec<SongWithFilters>) -> anyhow::Result<QueueSyncResult> {
         let mut player = self.lock_player()?;
         player.set_queue(songs)
@@ -221,6 +227,7 @@ where
         let saved_index = self.setting.get_saved_index(&mut tx).await;
         let saved_seek = self.setting.get_current_song_seek(&mut tx).await;
         let saved_play_pause_flag = self.setting.is_playing(&mut tx).await;
+        let always_start_paused = self.setting.should_always_start_paused(&mut tx).await;
         let count = songs.len();
 
         tx.commit().await?;
@@ -232,7 +239,7 @@ where
                 is_repeat,
                 saved_index,
                 saved_seek,
-                saved_play_pause_flag,
+                saved_play_pause_flag && !always_start_paused,
                 songs,
             )?
         };
@@ -378,10 +385,21 @@ where
     }
 
     pub async fn get_current_song_seek(&self) -> usize {
-        self.setting.get_current_song_seek(&self.pool).await
+        match self.current_player_seek_seconds() {
+            Ok(seek_value) => {
+                let _ = self
+                    .setting
+                    .set_current_song_seek(&self.pool, seek_value)
+                    .await;
+                seek_value
+            }
+            Err(_) => self.setting.get_current_song_seek(&self.pool).await,
+        }
     }
 
-    pub async fn save_current_song_seek(&self, seek_value: usize) -> anyhow::Result<()> {
+    pub async fn save_current_song_seek(&self, _seek_value: usize) -> anyhow::Result<()> {
+        let seek_value = self.current_player_seek_seconds()?;
+
         self.setting
             .set_current_song_seek(&self.pool, seek_value)
             .await
@@ -389,15 +407,13 @@ where
 
     pub async fn increase_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
         let seek_value = { self.lock_player()?.seek_pos() };
-        let new_seek_value = seek_value.as_secs() + seconds;
-
+        let new_seek_value = seek_value.as_secs().saturating_add(seconds);
         self.set_current_song_seek(new_seek_value as usize).await
     }
 
     pub async fn decrease_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
         let seek_value = { self.lock_player()?.seek_pos() };
-        let new_seek_value = seek_value.as_secs() - seconds;
-
+        let new_seek_value = seek_value.as_secs().saturating_sub(seconds);
         self.set_current_song_seek(new_seek_value as usize).await
     }
 
@@ -421,6 +437,14 @@ where
         self.lock_player()?.play_pause(is_playing);
 
         Ok(())
+    }
+
+    pub async fn get_always_start_paused(&self) -> bool {
+        self.setting.should_always_start_paused(&self.pool).await
+    }
+
+    pub async fn set_always_start_paused(&self, flag: bool) -> anyhow::Result<()> {
+        self.setting.set_always_start_paused(&self.pool, flag).await
     }
 
     pub async fn get_volume(&self) -> rodio::Float {
@@ -608,5 +632,14 @@ where
         (get_seek_backward_keybind, set_seek_backward_keybind),
         (get_filter_menu_keybind, set_filter_menu_keybind),
         (get_song_filter_menu_keybind, set_song_filter_menu_keybind),
+        (get_keybind_settings_keybind, set_keybind_settings_keybind),
+        (
+            get_switch_song_filter_pane_keybind,
+            set_switch_song_filter_pane_keybind
+        ),
+        (
+            get_apply_selected_filter_keybind,
+            set_apply_selected_filter_keybind
+        ),
     );
 }
