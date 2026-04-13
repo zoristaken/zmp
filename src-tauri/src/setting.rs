@@ -1,7 +1,8 @@
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use serde::Serialize;
 use sqlx::{Acquire, Database};
 
 const MUSIC_FOLDER_PATH_KEY: &str = "music_folder_path";
@@ -42,6 +43,63 @@ pub struct Setting {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeybindSettings {
+    pub play_pause: String,
+    pub previous: String,
+    pub next: String,
+    pub repeat: String,
+    pub shuffle: String,
+    pub mute: String,
+    pub increase_volume: String,
+    pub decrease_volume: String,
+    pub seek_forward: String,
+    pub seek_backward: String,
+    pub toggle_search: String,
+    pub toggle_settings: String,
+    pub open_keybind_settings: String,
+    pub toggle_filter_menu: String,
+    pub toggle_song_filter_menu: String,
+    pub switch_song_filter_pane: String,
+    pub apply_selected_filter: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettingsSnapshot {
+    pub music_folder_path: String,
+    pub has_processed_music_folder: bool,
+    pub saved_search_blob: String,
+    pub song_list_limit: i32,
+    pub always_start_paused: bool,
+    pub keybinds: KeybindSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSettingsSnapshot {
+    pub saved_index: usize,
+    pub saved_seek: usize,
+    pub is_playing: bool,
+    pub is_repeat: bool,
+    pub is_random: bool,
+    pub always_start_paused: bool,
+    pub volume: rodio::Float,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MusicFolderSyncSettings {
+    pub music_folder_path: String,
+    pub has_processed_music_folder: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SongListQuerySettings {
+    pub saved_search_blob: String,
+    pub song_list_limit: i32,
+}
+
 #[async_trait]
 pub trait SettingRepository<DB>
 where
@@ -51,6 +109,9 @@ where
     where
         A: Acquire<'a, Database = DB> + Send;
     async fn get<'a, A>(&self, acquiree: A, key: &str) -> anyhow::Result<Setting>
+    where
+        A: Acquire<'a, Database = DB> + Send;
+    async fn get_many<'a, A>(&self, acquiree: A, keys: &[&str]) -> anyhow::Result<Vec<Setting>>
     where
         A: Acquire<'a, Database = DB> + Send;
 }
@@ -74,6 +135,147 @@ where
             _db: PhantomData,
             repo,
         }
+    }
+
+    pub async fn get_app_settings_snapshot<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<AppSettingsSnapshot>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let values = self
+            .get_values(
+                acquiree,
+                &[
+                    MUSIC_FOLDER_PATH_KEY,
+                    PROCESSED_MUSIC_FLAG,
+                    SEARCH_BLOB,
+                    SONG_LIST_LIMIT,
+                    ALWAYS_START_PAUSED_FLAG,
+                    PLAY_PAUSE_KEYBIND,
+                    PREVIOUS_KEYBIND,
+                    NEXT_KEYBIND,
+                    REPEAT_KEYBIND,
+                    SHUFFLE_KEYBIND,
+                    MUTE_KEYBIND,
+                    INCREASE_VOLUME_KEYBIND,
+                    DECREASE_VOLUME_KEYBIND,
+                    SEEK_FORWARD_KEYBIND,
+                    SEEK_BACKWARD_KEYBIND,
+                    FOCUS_SEARCH_KEYBIND,
+                    SETTINGS_KEYBIND,
+                    KEYBIND_SETTINGS_KEYBIND,
+                    FILTER_MENU_KEYBIND,
+                    SONG_FILTER_MENU_KEYBIND,
+                    SWITCH_SONG_FILTER_PANE_KEYBIND,
+                    APPLY_SELECTED_FILTER_KEYBIND,
+                ],
+            )
+            .await?;
+
+        Ok(AppSettingsSnapshot {
+            music_folder_path: self.string_value(&values, MUSIC_FOLDER_PATH_KEY),
+            has_processed_music_folder: self.bool_value(&values, PROCESSED_MUSIC_FLAG),
+            saved_search_blob: self.string_value(&values, SEARCH_BLOB),
+            song_list_limit: self.positive_i32_value(
+                &values,
+                SONG_LIST_LIMIT,
+                DEFAULT_SONG_LIST_LIMIT,
+            ),
+            always_start_paused: self.bool_value(&values, ALWAYS_START_PAUSED_FLAG),
+            keybinds: KeybindSettings {
+                play_pause: self.string_value(&values, PLAY_PAUSE_KEYBIND),
+                previous: self.string_value(&values, PREVIOUS_KEYBIND),
+                next: self.string_value(&values, NEXT_KEYBIND),
+                repeat: self.string_value(&values, REPEAT_KEYBIND),
+                shuffle: self.string_value(&values, SHUFFLE_KEYBIND),
+                mute: self.string_value(&values, MUTE_KEYBIND),
+                increase_volume: self.string_value(&values, INCREASE_VOLUME_KEYBIND),
+                decrease_volume: self.string_value(&values, DECREASE_VOLUME_KEYBIND),
+                seek_forward: self.string_value(&values, SEEK_FORWARD_KEYBIND),
+                seek_backward: self.string_value(&values, SEEK_BACKWARD_KEYBIND),
+                toggle_search: self.string_value(&values, FOCUS_SEARCH_KEYBIND),
+                toggle_settings: self.string_value(&values, SETTINGS_KEYBIND),
+                open_keybind_settings: self.string_value(&values, KEYBIND_SETTINGS_KEYBIND),
+                toggle_filter_menu: self.string_value(&values, FILTER_MENU_KEYBIND),
+                toggle_song_filter_menu: self.string_value(&values, SONG_FILTER_MENU_KEYBIND),
+                switch_song_filter_pane: self
+                    .string_value(&values, SWITCH_SONG_FILTER_PANE_KEYBIND),
+                apply_selected_filter: self.string_value(&values, APPLY_SELECTED_FILTER_KEYBIND),
+            },
+        })
+    }
+
+    pub async fn get_player_settings_snapshot<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<PlayerSettingsSnapshot>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let values = self
+            .get_values(
+                acquiree,
+                &[
+                    INDEX_VALUE,
+                    CURRENT_SEEK_VALUE,
+                    PLAY_PAUSE_FLAG,
+                    REPEAT_FLAG,
+                    RANDOM_PLAY_FLAG,
+                    ALWAYS_START_PAUSED_FLAG,
+                    VOLUME_VALUE,
+                ],
+            )
+            .await?;
+
+        Ok(PlayerSettingsSnapshot {
+            saved_index: self.usize_value(&values, INDEX_VALUE, 0),
+            saved_seek: self.usize_value(&values, CURRENT_SEEK_VALUE, 0),
+            is_playing: self.bool_value(&values, PLAY_PAUSE_FLAG),
+            is_repeat: self.bool_value(&values, REPEAT_FLAG),
+            is_random: self.bool_value(&values, RANDOM_PLAY_FLAG),
+            always_start_paused: self.bool_value(&values, ALWAYS_START_PAUSED_FLAG),
+            volume: self.float_value(&values, VOLUME_VALUE, DEFAULT_VOLUME),
+        })
+    }
+
+    pub async fn get_music_folder_sync_settings<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<MusicFolderSyncSettings>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let values = self
+            .get_values(acquiree, &[MUSIC_FOLDER_PATH_KEY, PROCESSED_MUSIC_FLAG])
+            .await?;
+
+        Ok(MusicFolderSyncSettings {
+            music_folder_path: self.string_value(&values, MUSIC_FOLDER_PATH_KEY),
+            has_processed_music_folder: self.bool_value(&values, PROCESSED_MUSIC_FLAG),
+        })
+    }
+
+    pub async fn get_song_list_query_settings<'a, A>(
+        &self,
+        acquiree: A,
+    ) -> anyhow::Result<SongListQuerySettings>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let values = self
+            .get_values(acquiree, &[SEARCH_BLOB, SONG_LIST_LIMIT])
+            .await?;
+
+        Ok(SongListQuerySettings {
+            saved_search_blob: self.string_value(&values, SEARCH_BLOB),
+            song_list_limit: self.positive_i32_value(
+                &values,
+                SONG_LIST_LIMIT,
+                DEFAULT_SONG_LIST_LIMIT,
+            ),
+        })
     }
 
     pub async fn get_music_folder_path<'a, A>(&self, acquiree: A) -> anyhow::Result<String>
@@ -159,6 +361,7 @@ where
         &self,
         tx: &mut sqlx::Transaction<'_, DB>,
     ) -> anyhow::Result<()> {
+        log::info!("entered reset_library_state");
         self.set_saved_search_blob(&mut *tx, "").await?;
         self.set_saved_index(&mut *tx, 0).await?;
         self.set_current_song_seek(&mut *tx, 0).await?;
@@ -618,6 +821,8 @@ where
         tx: &mut sqlx::Transaction<'_, DB>,
         current_index: Option<usize>,
     ) -> anyhow::Result<()> {
+        log::info!("entered persist_started_track_in");
+
         self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
             .await?;
         self.set_current_song_seek(&mut *tx, 0).await?;
@@ -633,6 +838,8 @@ where
         current_index: Option<usize>,
         cleared_current_song: bool,
     ) -> anyhow::Result<()> {
+        log::info!("entered persist_queue_sync_in");
+
         self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
             .await?;
 
@@ -648,6 +855,8 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
+        log::info!("trying to set key[{key}] -> value[{value}]");
+
         self.repo
             .set(acquiree, key, value)
             .await
@@ -680,9 +889,68 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
+        log::info!("trying to get key[{key}]");
+
         self.repo
             .get(acquiree, key)
             .await
             .with_context(|| format!("Failed to get key: {}", key))
+    }
+
+    async fn get_values<'a, A>(
+        &self,
+        acquiree: A,
+        keys: &[&str],
+    ) -> anyhow::Result<HashMap<String, String>>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        log::info!("trying to get keys[{}]", keys.join(","));
+
+        let settings = self
+            .repo
+            .get_many(acquiree, keys)
+            .await
+            .with_context(|| format!("Failed to get keys: {}", keys.join(",")))?;
+
+        Ok(settings
+            .into_iter()
+            .map(|setting| (setting.key, setting.value))
+            .collect())
+    }
+
+    fn string_value(&self, values: &HashMap<String, String>, key: &str) -> String {
+        values.get(key).cloned().unwrap_or_default()
+    }
+
+    fn bool_value(&self, values: &HashMap<String, String>, key: &str) -> bool {
+        matches!(values.get(key).map(String::as_str), Some("true"))
+    }
+
+    fn positive_i32_value(&self, values: &HashMap<String, String>, key: &str, default: i32) -> i32 {
+        values
+            .get(key)
+            .and_then(|value| value.parse::<i32>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(default)
+    }
+
+    fn usize_value(&self, values: &HashMap<String, String>, key: &str, default: usize) -> usize {
+        values
+            .get(key)
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(default)
+    }
+
+    fn float_value(
+        &self,
+        values: &HashMap<String, String>,
+        key: &str,
+        default: rodio::Float,
+    ) -> rodio::Float {
+        values
+            .get(key)
+            .and_then(|value| value.parse::<rodio::Float>().ok())
+            .unwrap_or(default)
     }
 }

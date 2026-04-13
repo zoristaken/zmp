@@ -108,6 +108,8 @@ pub fn song(
         file_path: file_path.to_string(),
         duration,
         extension: extension.to_string(),
+        file_size: 4_096,
+        file_modified_millis: 1_700_000_000_000,
     }
 }
 

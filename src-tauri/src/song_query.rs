@@ -25,6 +25,8 @@ pub(crate) struct SongWithFilterRow {
     file_path: String,
     duration: i64,
     extension: String,
+    file_size: i64,
+    file_modified_millis: i64,
     filter_id: Option<i32>,
     filter_name: Option<String>,
 }
@@ -55,6 +57,8 @@ pub(crate) fn group_song_rows(rows: Vec<SongWithFilterRow>) -> Vec<SongWithFilte
                     file_path: row.file_path,
                     duration: row.duration,
                     extension: row.extension,
+                    file_size: row.file_size,
+                    file_modified_millis: row.file_modified_millis,
                 };
 
                 grouped.push(SongWithFilters {
@@ -155,6 +159,8 @@ mod tests {
             file_path: format!("/music/{id}.mp3"),
             duration: 180,
             extension: "mp3".to_string(),
+            file_size: 4_096,
+            file_modified_millis: 1_700_000_000_000,
             filter_id,
             filter_name: filter_name.map(str::to_string),
         }
