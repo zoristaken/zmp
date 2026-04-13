@@ -87,6 +87,9 @@ impl Player {
 
         Ok(self.current_index())
     }
+    pub fn seek_pos(&self) -> Duration {
+        self.player.get_pos()
+    }
 
     pub fn seek_to_seconds(&mut self, seconds: u64) -> anyhow::Result<()> {
         let target = Duration::from_secs(seconds);
@@ -236,6 +239,10 @@ impl Player {
     pub fn set_volume(&mut self, volume: rodio::Float) {
         self.volume = volume.clamp(0.0, 1.0);
         self.player.set_volume(self.volume);
+    }
+
+    pub fn get_volume(&mut self) -> rodio::Float {
+        self.player.volume()
     }
 
     pub fn set_repeat(&mut self, flag: bool) {
