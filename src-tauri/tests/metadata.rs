@@ -88,6 +88,8 @@ fn parse_song_metadata_reads_tagged_title_artist_album_year_and_remix() {
     assert_eq!(song.remix, "Mad Professor");
     assert_eq!(song.duration, 2);
     assert_eq!(song.extension, "wav");
+    assert!(song.file_size > 0);
+    assert!(song.file_modified_millis > 0);
     assert_eq!(
         song.search_blob,
         "teardrop massive attack mezzanine 1998 mad professor"

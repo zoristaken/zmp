@@ -238,6 +238,55 @@ async fn integration_keybind_roundtrips() {
 }
 
 #[tokio::test]
+async fn integration_app_settings_snapshot_batches_saved_values() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    service
+        .set_music_folder_path(&pool, "/music/library")
+        .await
+        .unwrap();
+    service
+        .set_processed_music_folder(&pool, true)
+        .await
+        .unwrap();
+    service
+        .set_saved_search_blob(&pool, "burial")
+        .await
+        .unwrap();
+    service.set_song_list_limit(&pool, 2500).await.unwrap();
+    service.set_always_start_paused(&pool, true).await.unwrap();
+    service
+        .set_play_pause_keybind(&pool, "Space")
+        .await
+        .unwrap();
+    service.set_filter_menu_keybind(&pool, "F").await.unwrap();
+
+    let snapshot = service.get_app_settings_snapshot(&pool).await.unwrap();
+
+    assert_eq!(snapshot.music_folder_path, "/music/library");
+    assert!(snapshot.has_processed_music_folder);
+    assert_eq!(snapshot.saved_search_blob, "burial");
+    assert_eq!(snapshot.song_list_limit, 2500);
+    assert!(snapshot.always_start_paused);
+    assert_eq!(snapshot.keybinds.play_pause, "Space");
+    assert_eq!(snapshot.keybinds.toggle_filter_menu, "F");
+}
+
+#[tokio::test]
+async fn integration_music_folder_sync_settings_batch_defaults_when_missing() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    let snapshot = service.get_music_folder_sync_settings(&pool).await.unwrap();
+
+    assert_eq!(snapshot.music_folder_path, "");
+    assert!(!snapshot.has_processed_music_folder);
+}
+
+#[tokio::test]
 async fn integration_updates_existing_setting_instead_of_duplicate_insert() {
     let pool = setup_db().await;
     let sqlite = SqliteImpl {};

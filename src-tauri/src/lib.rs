@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
+use manager::PlayerManager;
+use sqlite::SqliteImpl;
 use sqlx::Sqlite;
 use tauri::Manager;
 
-use crate::{manager::PlayerManager, sqlite::SqliteImpl};
+use watcher::MusicFolderWatcher;
 
 mod commands;
 mod config;
@@ -17,19 +21,28 @@ pub mod song_filter;
 pub mod song_mutation;
 pub mod song_query;
 pub mod sqlite;
+mod watcher;
 
 pub struct AppState {
     pub zmp: PlayerManager<SqliteImpl, Sqlite>,
+    pub watcher: Arc<watcher::MusicFolderWatcher<SqliteImpl, Sqlite>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::process_music_folder,
             commands::load,
+            commands::get_app_settings_snapshot,
+            commands::reload_song_list_after_library_change,
             commands::commit_preview_search,
             commands::preview_search_songs,
             commands::get_music_folder_path,
@@ -109,9 +122,19 @@ pub fn run() {
                 let config = config::Config::new(app).await.unwrap();
                 let path = config.sqlite_path().await.unwrap();
                 let pool = sqlite::new(&path).await.unwrap();
+                let zmp = PlayerManager::new(pool.clone(), SqliteImpl {}).await;
+                let watcher = Arc::new(MusicFolderWatcher::new(
+                    app.handle().clone(),
+                    pool,
+                    SqliteImpl {},
+                ));
+
                 app.manage(AppState {
-                    zmp: PlayerManager::new(pool, SqliteImpl {}).await,
+                    zmp,
+                    watcher: watcher.clone(),
                 });
+
+                tauri::async_runtime::spawn(watcher.run());
             });
             Ok(())
         })

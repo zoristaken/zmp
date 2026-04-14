@@ -17,6 +17,8 @@ pub struct Song {
     pub file_path: String,
     pub duration: i64,
     pub extension: String,
+    pub file_size: i64,
+    pub file_modified_millis: i64,
 }
 
 #[async_trait]
@@ -24,6 +26,18 @@ pub trait SongRepository<DB>
 where
     DB: Database,
 {
+    async fn add_song<'a, A>(&self, acquiree: A, song: Song) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = DB> + Send;
+
+    async fn update_song<'a, A>(&self, acquiree: A, song: Song) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send;
+
+    async fn remove_song<'a, A>(&self, acquiree: A, song_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send;
+
     async fn replace_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = DB> + Send;
@@ -99,6 +113,27 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.repo.replace_all(acquiree, songs).await
+    }
+
+    pub async fn add_song<'a, A>(&self, acquiree: A, song: Song) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.add_song(acquiree, song).await
+    }
+
+    pub async fn update_song<'a, A>(&self, acquiree: A, song: Song) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.update_song(acquiree, song).await
+    }
+
+    pub async fn remove_song<'a, A>(&self, acquiree: A, song_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.remove_song(acquiree, song_id).await
     }
 
     pub async fn list_songs<'a, A>(&self, acquiree: A) -> anyhow::Result<Vec<Song>>

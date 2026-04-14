@@ -54,6 +54,11 @@
     currentIndex: number | null;
   };
 
+  type LibraryChangedPayload = {
+    count: number;
+    currentIndex: number | null;
+  };
+
   type KeybindAction =
     | "playPause"
     | "previous"
@@ -74,6 +79,28 @@
     | "applySelectedFilter";
 
   type KeybindMap = Record<KeybindAction, string>;
+
+  type AppSettingsSnapshot = {
+    musicFolderPath: string;
+    hasProcessedMusicFolder: boolean;
+    savedSearchBlob: string;
+    songListLimit: number;
+    alwaysStartPaused: boolean;
+    keybinds: KeybindMap;
+  };
+
+  type PlayerLoadState = {
+    count: number;
+    currentIndex: number | null;
+    volume: number;
+    shuffle: boolean;
+    repeat: boolean;
+    failedSongIds: number[];
+  };
+
+  type PlaybackFeedback = {
+    failedSongIds: number[];
+  };
 
   const defaultKeybinds: KeybindMap = {
     playPause: "Space",
@@ -113,26 +140,6 @@
     toggleSongFilterMenu: "Open / Close current song filters",
     switchSongFilterPane: "Switch current / available filters",
     applySelectedFilter: "Confirm warning / apply selected filter",
-  };
-
-  const getKeybindCommands: Record<KeybindAction, string> = {
-    playPause: "get_play_pause_keybind",
-    previous: "get_previous_keybind",
-    next: "get_next_keybind",
-    repeat: "get_repeat_keybind",
-    shuffle: "get_shuffle_keybind",
-    mute: "get_mute_keybind",
-    increaseVolume: "get_increase_volume_keybind",
-    decreaseVolume: "get_decrease_volume_keybind",
-    seekForward: "get_seek_forward_keybind",
-    seekBackward: "get_seek_backward_keybind",
-    toggleSearch: "get_focus_search_keybind",
-    toggleSettings: "get_settings_keybind",
-    openKeybindSettings: "get_keybind_settings_keybind",
-    toggleFilterMenu: "get_filter_menu_keybind",
-    toggleSongFilterMenu: "get_song_filter_menu_keybind",
-    switchSongFilterPane: "get_switch_song_filter_pane_keybind",
-    applySelectedFilter: "get_apply_selected_filter_keybind",
   };
 
   const setKeybindCommands: Record<KeybindAction, string> = {
@@ -182,6 +189,7 @@
   let isSeeking = false;
   let isProgrammaticSeekReset = false;
   let isDraggingSeek = false;
+  let isCommittingSeek = false;
 
   let volumeTimeout: ReturnType<typeof setTimeout> | undefined;
   let playbackInterval: ReturnType<typeof setInterval> | undefined;
@@ -204,6 +212,8 @@
   let lastDisplayedSearchQuery = "";
   let searchRequestVersion = 0;
   let isRefreshingSeek = false;
+  let playbackFailedSongIds: number[] = [];
+  let playbackFailedSongIdSet = new Set<number>();
 
   let searchInput: HTMLInputElement | null = null;
   let filterLibraryInput: HTMLInputElement | null = null;
@@ -250,6 +260,8 @@
   let songFilterAvailableRowElements: Array<HTMLButtonElement | null> = [];
   let filterLibraryRowElements: Array<HTMLDivElement | null> = [];
 
+  $: playbackFailedSongIdSet = new Set(playbackFailedSongIds);
+
   function hasMusicFolderPath(path: string): boolean {
     return path.trim().length > 0;
   }
@@ -266,41 +278,65 @@
     return !isInitialSetupRequired;
   }
 
-  async function refreshSetupState() {
-    try {
-      musicFolderPath = await invoke<string>("get_music_folder_path");
-    } catch (err) {
-      console.error("Failed to load music folder path:", err);
-      musicFolderPath = "";
+  function applySavedVolumeState(savedVolume: number) {
+    volume = Math.round(savedVolume * 100);
+    previousVolume = volume > 0 ? volume : 50;
+    isMuted = volume === 0;
+  }
+
+  function forceOpenGeneralSettings() {
+    isSettingsOpen = true;
+    activeSettingsSection = "general";
+    captureAction = null;
+  }
+
+  function applySavedKeybinds(savedKeybinds: KeybindMap) {
+    const nextKeybinds = { ...defaultKeybinds };
+
+    for (const [action, value] of Object.entries(savedKeybinds) as Array<
+      [KeybindAction, string]
+    >) {
+      if (value) {
+        nextKeybinds[action] = value;
+      }
     }
 
-    try {
-      hasProcessedMusicFolder = await invoke<boolean>(
-        "has_processed_music_folder",
-      );
-    } catch (err) {
-      console.error("Failed to load processed music folder flag:", err);
-      hasProcessedMusicFolder = false;
-    }
+    keybinds = nextKeybinds;
+  }
 
-    try {
-      songListLimit = await invoke<number>("get_song_list_limit");
-      songListLimitInput = String(songListLimit);
-    } catch (err) {
-      console.error("Failed to load song list limit:", err);
-      songListLimit = 10000;
-      songListLimitInput = "10000";
-    }
-
-    try {
-      alwaysStartPaused = await invoke<boolean>("get_always_start_paused");
-    } catch (err) {
-      console.error("Failed to load always-start-paused flag:", err);
-      alwaysStartPaused = false;
-    }
-
+  function applyAppSettingsSnapshot(snapshot: AppSettingsSnapshot) {
+    musicFolderPath = snapshot.musicFolderPath;
+    hasProcessedMusicFolder = snapshot.hasProcessedMusicFolder;
+    searchQuery = snapshot.savedSearchBlob;
+    lastCommittedSearchQuery = normalizeSearchQuery(snapshot.savedSearchBlob);
+    lastDisplayedSearchQuery = lastCommittedSearchQuery;
+    songListLimit = snapshot.songListLimit;
+    songListLimitInput = String(songListLimit);
+    alwaysStartPaused = snapshot.alwaysStartPaused;
+    applySavedKeybinds(snapshot.keybinds);
     isInitialSetupRequired = requiresInitialSetup();
     hasLoadedSetupState = true;
+  }
+
+  async function refreshAppSettings() {
+    try {
+      applyAppSettingsSnapshot(
+        await invoke<AppSettingsSnapshot>("get_app_settings_snapshot"),
+      );
+    } catch (err) {
+      console.error("Failed to load app settings:", err);
+      musicFolderPath = "";
+      hasProcessedMusicFolder = false;
+      searchQuery = "";
+      lastCommittedSearchQuery = "";
+      lastDisplayedSearchQuery = "";
+      songListLimit = 10000;
+      songListLimitInput = "10000";
+      alwaysStartPaused = false;
+      keybinds = { ...defaultKeybinds };
+      isInitialSetupRequired = requiresInitialSetup();
+      hasLoadedSetupState = true;
+    }
   }
 
   function formatDuration(durationSeconds: number): string {
@@ -382,6 +418,23 @@
     }
   }
 
+  function markPlaybackFailedSongs(songIds: number[]) {
+    if (songIds.length === 0) return;
+
+    playbackFailedSongIds = Array.from(
+      new Set([...playbackFailedSongIds, ...songIds]),
+    );
+  }
+
+  function clearPlaybackFailedSongs(songIds: number[]) {
+    if (songIds.length === 0) return;
+
+    const removed = new Set(songIds);
+    playbackFailedSongIds = playbackFailedSongIds.filter(
+      (songId) => !removed.has(songId),
+    );
+  }
+
   async function ensureSelectedSongIsVisible() {
     await tick();
 
@@ -398,7 +451,7 @@
 
   async function saveSeekProgress() {
     try {
-      await invoke("save_current_song_seek", {
+      currentSeekSeconds = await invoke<number>("save_current_song_seek", {
         seekValue: currentSeekSeconds,
       });
     } catch (err) {
@@ -422,7 +475,7 @@
       if (!isPlaying || isSeeking || !currentSong || isRefreshingSeek) return;
 
       void (async () => {
-        await refreshSavedSeek();
+        await syncSavedSeek();
 
         if (!isPlaying || isSeeking || !currentSong) return;
 
@@ -454,6 +507,40 @@
     currentSong = await invoke<Song | null>("get_current_song");
   }
 
+  async function initializeLibraryAndPlayerState() {
+    const state = await invoke<PlayerLoadState>("load");
+    searchResultCount = state.count;
+
+    applySavedVolumeState(state.volume);
+    isShuffle = state.shuffle;
+    isRepeat = state.repeat;
+
+    await refreshLoadedSongs();
+    await refreshAllFilters();
+
+    await handleTrackChange(state.currentIndex);
+    playbackFailedSongIds = [];
+    markPlaybackFailedSongs(state.failedSongIds);
+  }
+
+  async function handleLibraryChange() {
+    const payload = await invoke<LibraryChangedPayload>(
+      "reload_song_list_after_library_change",
+    );
+
+    await refreshAllFilters();
+
+    if (normalizeSearchQuery(searchQuery) !== lastCommittedSearchQuery) {
+      lastDisplayedSearchQuery = "";
+      await performSearch({ playResult: false, commit: false });
+    } else {
+      await refreshLoadedSongs();
+      searchResultCount = payload.count;
+    }
+
+    await handleTrackChange(payload.currentIndex);
+  }
+
   async function refreshSavedSeek() {
     if (isRefreshingSeek) return;
 
@@ -463,6 +550,22 @@
       currentSeekSeconds = await invoke<number>("get_current_song_seek");
     } catch (err) {
       console.error("Failed to get saved seek position:", err);
+    } finally {
+      isRefreshingSeek = false;
+    }
+  }
+
+  async function syncSavedSeek() {
+    if (isRefreshingSeek) return;
+
+    isRefreshingSeek = true;
+
+    try {
+      currentSeekSeconds = await invoke<number>("save_current_song_seek", {
+        seekValue: currentSeekSeconds,
+      });
+    } catch (err) {
+      console.error("Failed to save seek position:", err);
     } finally {
       isRefreshingSeek = false;
     }
@@ -579,7 +682,14 @@
     }
 
     try {
-      await invoke("play_song_at", { index: targetIndex });
+      const feedback = await invoke<PlaybackFeedback>("play_song_at", {
+        index: targetIndex,
+      });
+      if (feedback.failedSongIds.length === 0) {
+        clearPlaybackFailedSongs([targetSongId]);
+      } else {
+        markPlaybackFailedSongs(feedback.failedSongIds);
+      }
     } catch (err) {
       console.error("Failed to play selected song:", err);
     }
@@ -607,7 +717,8 @@
     await commitDisplayedPreviewQueue();
 
     try {
-      await invoke("previous_song");
+      const feedback = await invoke<PlaybackFeedback>("previous_song");
+      markPlaybackFailedSongs(feedback.failedSongIds);
     } catch (err) {
       console.error("Failed to go to previous song:", err);
     }
@@ -617,7 +728,8 @@
     await commitDisplayedPreviewQueue();
 
     try {
-      await invoke("next_song");
+      const feedback = await invoke<PlaybackFeedback>("next_song");
+      markPlaybackFailedSongs(feedback.failedSongIds);
     } catch (err) {
       console.error("Failed to go to next song:", err);
     }
@@ -651,7 +763,6 @@
     const shouldCommit = options?.commit ?? false;
     const previousCurrentSongId = currentSong?.song.id ?? null;
     const previousSelectedSongId = selectedSongId;
-    const previousSelectedIndex = selectedIndex;
     const normalizedQuery = normalizeSearchQuery(searchQuery);
 
     if (!shouldCommit && normalizedQuery === lastDisplayedSearchQuery) {
@@ -855,7 +966,7 @@
   }
 
   async function stepSeekBy(deltaSeconds: number) {
-    if (!currentSong || isSeeking || isDraggingSeek) return;
+    if (!currentSong || isSeeking || isDraggingSeek || isCommittingSeek) return;
 
     const duration = currentSong.song.duration;
     const nextSeekSeconds = Math.max(
@@ -894,7 +1005,7 @@
         });
       }
 
-      await refreshSavedSeek();
+      currentSeekSeconds = nextSeekSeconds;
     } catch (err) {
       console.error("Failed to seek from keybind:", err);
     }
@@ -908,24 +1019,25 @@
   }
 
   async function commitSeek() {
-    if (isProgrammaticSeekReset || !currentSong) {
+    if (isProgrammaticSeekReset || !currentSong || isCommittingSeek) {
       isSeeking = false;
       isDraggingSeek = false;
       return;
     }
 
+    isCommittingSeek = true;
+    isDraggingSeek = false;
+
     try {
       await invoke("set_current_song_seek", {
         seekValue: currentSeekSeconds,
       });
-
-      await refreshSavedSeek();
     } catch (err) {
       console.error("Failed to seek song:", err);
       resetSeekUi();
     } finally {
+      isCommittingSeek = false;
       isSeeking = false;
-      isDraggingSeek = false;
 
       if (isPlaying) {
         startPlaybackTicker();
@@ -995,23 +1107,6 @@
     }
 
     return parts.join("+");
-  }
-
-  async function loadKeybinds() {
-    const nextKeybinds = { ...defaultKeybinds };
-
-    for (const action of Object.keys(defaultKeybinds) as KeybindAction[]) {
-      try {
-        const value = await invoke<string | null>(getKeybindCommands[action]);
-        if (value !== null && value !== undefined) {
-          nextKeybinds[action] = value;
-        }
-      } catch (err) {
-        console.error(`Failed to load keybind for ${action}:`, err);
-      }
-    }
-
-    keybinds = nextKeybinds;
   }
 
   async function persistKeybind(action: KeybindAction, combo: string) {
@@ -1133,31 +1228,13 @@
     await tick();
 
     await invoke("process_music_folder");
-    await refreshSetupState();
-
+    hasProcessedMusicFolder = true;
     searchQuery = "";
     lastCommittedSearchQuery = "";
     lastDisplayedSearchQuery = "";
+    isInitialSetupRequired = requiresInitialSetup();
 
-    const count = await invoke<number>("load");
-    searchResultCount = count;
-
-    const savedVolume = await invoke<number>("get_volume");
-    const savedShuffle = await invoke<boolean>("get_random");
-    const savedRepeat = await invoke<boolean>("get_repeat");
-    const initialIndex = await invoke<number | null>("get_current_index");
-    const playerPaused = await invoke<boolean>("get_is_player_paused");
-
-    volume = Math.round(savedVolume * 100);
-    previousVolume = volume > 0 ? volume : 50;
-    isMuted = volume === 0;
-    isShuffle = savedShuffle;
-    isRepeat = savedRepeat;
-    isPlaying = !playerPaused;
-
-    await refreshLoadedSongs();
-    await refreshAllFilters();
-    await handleTrackChange(initialIndex);
+    await initializeLibraryAndPlayerState();
 
     setupMessage = "Music folder processed successfully.";
     setupMessageKind = "success";
@@ -1165,8 +1242,7 @@
     if (canCloseInitialSettings()) {
       closeSettings();
     } else {
-      isSettingsOpen = true;
-      activeSettingsSection = "general";
+      forceOpenGeneralSettings();
     }
   }
 
@@ -1732,8 +1808,7 @@
         err instanceof Error ? err.message : "Failed to process music folder.";
       setupMessageKind = "error";
       isInitialSetupRequired = requiresInitialSetup();
-      isSettingsOpen = true;
-      activeSettingsSection = "general";
+      forceOpenGeneralSettings();
     } finally {
       isPickingMusicFolder = false;
     }
@@ -2334,9 +2409,7 @@
   }
 
   $: if (hasLoadedSetupState && isInitialSetupRequired) {
-    isSettingsOpen = true;
-    activeSettingsSection = "general";
-    captureAction = null;
+    forceOpenGeneralSettings();
   }
 
   $: if (isSongFilterMenuOpen && songFilterModalElement) {
@@ -2372,6 +2445,7 @@
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
+    let unlistenLibraryChanged: (() => void) | undefined;
     let unlistenFocusChanged: (() => void) | undefined;
     let submenuResizeObserver: ResizeObserver | undefined;
     const handleViewportResize = () => {
@@ -2403,8 +2477,6 @@
           },
         );
 
-        await loadKeybinds();
-
         unlisten = await listen<TrackChangedPayload>(
           "track-changed",
           async (event) => {
@@ -2412,46 +2484,22 @@
           },
         );
 
-        const savedSearch = await invoke<string>("get_saved_search_blob");
-        searchQuery = savedSearch;
-        lastCommittedSearchQuery = normalizeSearchQuery(searchQuery);
-        lastDisplayedSearchQuery = lastCommittedSearchQuery;
+        unlistenLibraryChanged = await listen("library-changed", async () => {
+          await handleLibraryChange();
+        });
 
-        await refreshSetupState();
+        await refreshAppSettings();
 
         if (isInitialSetupRequired) {
-          isSettingsOpen = true;
-          activeSettingsSection = "general";
           songs = [];
           currentSong = null;
           searchResultCount = 0;
           hasInitialized = true;
+          forceOpenGeneralSettings();
           return;
         }
 
-        const count = await invoke<number>("load");
-        searchResultCount = count;
-
-        const savedVolume = await invoke<number>("get_volume");
-        const savedShuffle = await invoke<boolean>("get_random");
-        const savedRepeat = await invoke<boolean>("get_repeat");
-        const initialIndex = await invoke<number | null>("get_current_index");
-        const playerPaused = await invoke<boolean>("get_is_player_paused");
-
-        volume = Math.round(savedVolume * 100);
-        previousVolume = volume > 0 ? volume : 50;
-        isMuted = volume === 0;
-
-        isShuffle = savedShuffle;
-        isRepeat = savedRepeat;
-        isPlaying = !playerPaused;
-
-        await refreshLoadedSongs();
-        await refreshAllFilters();
-        await refreshCurrentSong();
-        await refreshSavedSeek();
-        await handleTrackChange(initialIndex);
-        await syncPlaybackState();
+        await initializeLibraryAndPlayerState();
         focusAppShellForShortcuts();
 
         hasInitialized = true;
@@ -2469,6 +2517,7 @@
       if (searchTimeout) clearTimeout(searchTimeout);
       if (playbackInterval) clearInterval(playbackInterval);
       if (unlisten) unlisten();
+      if (unlistenLibraryChanged) unlistenLibraryChanged();
       if (unlistenFocusChanged) unlistenFocusChanged();
     };
   });
@@ -2542,6 +2591,9 @@
             <div
               bind:this={songRowElements[i]}
               class:selected={selectedSongId === songEntry.song.id}
+              class:playback-warning={playbackFailedSongIdSet.has(
+                songEntry.song.id,
+              )}
               class="song-row"
               role="button"
               tabindex="0"
@@ -2564,6 +2616,12 @@
                 {/if}
 
                 <div class="row-meta-under">
+                  {#if playbackFailedSongIdSet.has(songEntry.song.id)}
+                    <span class="song-warning-chip">
+                      Can't play with current decoder
+                    </span>
+                  {/if}
+
                   <button
                     class="song-inline-filter-button icon-only"
                     title="Manage filters for this song"
@@ -3635,8 +3693,20 @@
     background: #242424;
   }
 
+  .song-row.playback-warning {
+    background: #433114;
+  }
+
+  .song-row.playback-warning:hover {
+    background: #513c18;
+  }
+
   .song-row.selected {
     background: #1f3a2a;
+  }
+
+  .song-row.selected.playback-warning {
+    background: #5d461a;
   }
 
   .song-row:focus-visible {
@@ -3680,6 +3750,21 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .song-warning-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: #6a4b10;
+    border: 1px solid #8d6720;
+    color: #fff0c2;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
   }
 
   .row-meta-under {
