@@ -45,6 +45,21 @@ where
     R: FilterRepository<DB>,
     DB: Database,
 {
+    //TODO (zor): domain object validation in here for simplicity for now
+    fn normalize_name(name: &str) -> anyhow::Result<&str> {
+        let normalized = name.trim();
+
+        if normalized.is_empty() {
+            anyhow::bail!("filter name must not be empty");
+        }
+
+        if normalized.contains('|') {
+            anyhow::bail!("filter name must not contain '|'");
+        }
+
+        Ok(normalized)
+    }
+
     pub fn new(repo: R) -> Self {
         Self {
             _db: PhantomData,
@@ -56,7 +71,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        self.repo.add(acquiree, name).await?;
+        self.repo.add(acquiree, Self::normalize_name(name)?).await?;
 
         Ok(())
     }

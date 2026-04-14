@@ -95,6 +95,29 @@ async fn integration_add_returns_error_for_duplicate_name() {
 }
 
 #[tokio::test]
+async fn integration_add_rejects_pipe_delimiter_in_name() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = FilterService::new(sqlite);
+
+    let err = service.add(&pool, "liked|chill").await.unwrap_err();
+
+    assert_eq!(err.to_string(), "filter name must not contain '|'");
+}
+
+#[tokio::test]
+async fn integration_add_trims_name_before_saving() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = FilterService::new(sqlite);
+
+    service.add(&pool, "  ambient  ").await.unwrap();
+
+    let actual = service.get_all(&pool).await.unwrap();
+    assert_eq!(actual, vec![filter(1, "ambient")]);
+}
+
+#[tokio::test]
 async fn integration_remove_returns_false_when_filter_is_missing() {
     let pool = setup_db().await;
     let sqlite = SqliteImpl {};
