@@ -20,6 +20,8 @@ fn song(title: &str, artist: &str, path: &str) -> Song {
         file_path: path.to_string(),
         duration: 180,
         extension: "flac".to_string(),
+        file_size: 4_096,
+        file_modified_millis: 1_700_000_000_000,
     }
 }
 
@@ -109,4 +111,24 @@ async fn replace_library_and_reset_state_clears_song_filter_links_but_keeps_filt
     assert_eq!(filters.len(), 1);
     assert_eq!(filters[0].name, "ambient");
     assert!(song_filters.is_empty());
+}
+
+#[tokio::test]
+async fn load_restores_saved_volume_into_the_player() {
+    let pool = setup_db().await;
+    let manager = PlayerManager::new(pool.clone(), SqliteImpl {}).await;
+
+    manager
+        .setting
+        .set_saved_volume_value(&pool, 0.42)
+        .await
+        .unwrap();
+
+    let state = manager.load().await.unwrap();
+    let player = manager.player.lock().unwrap();
+
+    assert_eq!(state.count, 0);
+    assert_eq!(state.current_index, None);
+    assert!((state.volume - 0.42).abs() < f32::EPSILON);
+    assert!((player.get_volume() - 0.42).abs() < f32::EPSILON);
 }

@@ -19,6 +19,25 @@ use crate::{
 };
 
 const SONG_SORT_ORDER: &str = "s.title, s.artist, s.album, s.release_year, s.id";
+const SQLITE_BIND_LIMIT: usize = 32766;
+const SONG_INSERT_FIELDS_PER_ROW: usize = 11;
+const SONG_INSERT_BATCH_SIZE: usize = SQLITE_BIND_LIMIT / SONG_INSERT_FIELDS_PER_ROW;
+
+fn push_song_insert_values<'a>(query: &mut QueryBuilder<'a, Sqlite>, songs: &'a [Song]) {
+    query.push_values(songs, |mut row, song| {
+        row.push_bind(&song.title)
+            .push_bind(&song.artist)
+            .push_bind(song.release_year)
+            .push_bind(&song.album)
+            .push_bind(&song.remix)
+            .push_bind(&song.search_blob)
+            .push_bind(&song.file_path)
+            .push_bind(song.duration)
+            .push_bind(&song.extension)
+            .push_bind(song.file_size)
+            .push_bind(song.file_modified_millis);
+    });
+}
 
 pub async fn new(path: &str) -> anyhow::Result<SqlitePool> {
     let pool = SqlitePool::connect_with(
@@ -42,6 +61,79 @@ pub struct SqliteImpl {}
 
 #[async_trait]
 impl SongRepository<Sqlite> for SqliteImpl {
+    async fn add_song<'a, A>(&self, acquiree: A, song: Song) -> anyhow::Result<Song>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let saved_song = sqlx::query_as::<sqlx::Sqlite, Song>(
+            "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis",
+        )
+        .bind(&song.title)
+        .bind(&song.artist)
+        .bind(song.release_year)
+        .bind(&song.album)
+        .bind(&song.remix)
+        .bind(&song.search_blob)
+        .bind(&song.file_path)
+        .bind(song.duration)
+        .bind(&song.extension)
+        .bind(song.file_size)
+        .bind(song.file_modified_millis)
+        .fetch_one(&mut *conn)
+        .await
+        .with_context(|| format!("failed inserting song: {:?}", song))?;
+
+        Ok(saved_song)
+    }
+
+    async fn update_song<'a, A>(&self, acquiree: A, song: Song) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let result = sqlx::query(
+            "UPDATE song
+                SET title = ?, artist = ?, release_year = ?, album = ?, remix = ?, search_blob = ?, file_path = ?, duration = ?, extension = ?, file_size = ?, file_modified_millis = ?
+                WHERE id = ?",
+        )
+        .bind(&song.title)
+        .bind(&song.artist)
+        .bind(song.release_year)
+        .bind(&song.album)
+        .bind(&song.remix)
+        .bind(&song.search_blob)
+        .bind(&song.file_path)
+        .bind(song.duration)
+        .bind(&song.extension)
+        .bind(song.file_size)
+        .bind(song.file_modified_millis)
+        .bind(song.id)
+        .execute(&mut *conn)
+        .await
+        .with_context(|| format!("failed updating song: {:?}", song))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn remove_song<'a, A>(&self, acquiree: A, song_id: i32) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        let conn = &mut *acquiree.acquire().await?;
+
+        let result = sqlx::query("DELETE FROM song WHERE id = ?")
+            .bind(song_id)
+            .execute(&mut *conn)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn replace_all<'a, A>(&self, acquiree: A, songs: Vec<Song>) -> anyhow::Result<()>
     where
         A: Acquire<'a, Database = Sqlite> + Send,
@@ -50,23 +142,15 @@ impl SongRepository<Sqlite> for SqliteImpl {
 
         sqlx::query("DELETE FROM song").execute(&mut *conn).await?;
 
-        for val in songs {
-            sqlx::query(
-                "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(&val.title)
-            .bind(&val.artist)
-            .bind(val.release_year)
-            .bind(&val.album)
-            .bind(&val.remix)
-            .bind(&val.search_blob)
-            .bind(&val.file_path)
-            .bind(val.duration)
-            .bind(&val.extension)
-            .execute(&mut *conn)
-            .await
-            .with_context(|| format!("failed inserting replacement song: {:?}", val))?;
+        for chunk in songs.chunks(SONG_INSERT_BATCH_SIZE) {
+            let mut query = QueryBuilder::<Sqlite>::new(
+                "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis) ",
+            );
+            push_song_insert_values(&mut query, chunk);
+
+            query.build().execute(&mut *conn).await.with_context(|| {
+                format!("failed inserting replacement song batch of {}", chunk.len())
+            })?;
         }
 
         Ok(())
@@ -78,23 +162,17 @@ impl SongRepository<Sqlite> for SqliteImpl {
     {
         let conn = &mut *acquiree.acquire().await?;
 
-        for val in songs {
-            sqlx::query(
-            "INSERT OR IGNORE INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&val.title)
-        .bind(&val.artist)
-        .bind(val.release_year)
-        .bind(&val.album)
-        .bind(&val.remix)
-        .bind(&val.search_blob)
-        .bind(&val.file_path)
-        .bind(val.duration)
-        .bind(&val.extension)
-        .execute(&mut *conn)
-        .await
-        .with_context(|| format!("failed inserting: {:?}", val))?;
+        for chunk in songs.chunks(SONG_INSERT_BATCH_SIZE) {
+            let mut query = QueryBuilder::<Sqlite>::new(
+                "INSERT INTO song (title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis) ",
+            );
+            push_song_insert_values(&mut query, chunk);
+
+            query
+                .build()
+                .execute(&mut *conn)
+                .await
+                .with_context(|| format!("failed inserting song batch of {}", chunk.len()))?;
         }
 
         Ok(())
@@ -107,7 +185,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
         let conn = &mut *acquiree.acquire().await?;
 
         let songs = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song ORDER BY id"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis FROM song ORDER BY id"
             )
             .fetch_all(conn)
             .await?;
@@ -152,7 +230,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
         A: Acquire<'a, Database = Sqlite> + Send,
     {
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-            "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE ",
+            "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis FROM song WHERE ",
         );
         //TODO (zor): after using the app, verify if searching by substrings actually happens
         //I have a feeling we can improve the performance by moving to a fts5 prefix search
@@ -183,7 +261,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
         let conn = &mut *acquiree.acquire().await?;
 
         let song = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE id = ?"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis FROM song WHERE id = ?"
             )
             .bind(id)
             .fetch_one(conn)
@@ -203,7 +281,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
         let conn = &mut *acquiree.acquire().await?;
 
         let song = sqlx::query_as::<sqlx::Sqlite, Song>(
-        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension FROM song WHERE title = ? AND artist = ?"
+        "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis FROM song WHERE title = ? AND artist = ?"
             )
             .bind(title)
             .bind(artist)
@@ -450,6 +528,31 @@ impl SettingRepository<Sqlite> for SqliteImpl {
                 .await?,
         )
     }
+
+    async fn get_many<'a, A>(&self, acquiree: A, keys: &[&str]) -> anyhow::Result<Vec<Setting>>
+    where
+        A: Acquire<'a, Database = Sqlite> + Send,
+    {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut conn = acquiree.acquire().await?;
+        let mut query =
+            QueryBuilder::<Sqlite>::new("SELECT key, value FROM setting WHERE key IN (");
+        let mut separated = query.separated(", ");
+
+        for key in keys {
+            separated.push_bind(key);
+        }
+
+        query.push(")");
+
+        Ok(query
+            .build_query_as::<Setting>()
+            .fetch_all(&mut *conn)
+            .await?)
+    }
 }
 
 #[async_trait]
@@ -499,7 +602,9 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
                     s.search_blob,
                     s.file_path,
                     s.duration,
-                    s.extension
+                    s.extension,
+                    s.file_size,
+                    s.file_modified_millis
                 FROM song s
             "#,
         );
@@ -540,7 +645,9 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
                     s.search_blob,
                     s.file_path,
                     s.duration,
-                    s.extension
+                    s.extension,
+                    s.file_size,
+                    s.file_modified_millis
                 FROM song s
                 WHERE s.id =
                 "#,
@@ -577,6 +684,8 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
                 s.file_path,
                 s.duration,
                 s.extension,
+                s.file_size,
+                s.file_modified_millis,
                 f.id AS filter_id,
                 f.name AS filter_name
             FROM selected_songs s

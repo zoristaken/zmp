@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
+use manager::PlayerManager;
+use sqlite::SqliteImpl;
 use sqlx::Sqlite;
 use tauri::Manager;
 
-use crate::{manager::PlayerManager, sqlite::SqliteImpl};
+use watcher::MusicFolderWatcher;
 
 mod commands;
 mod config;
@@ -17,19 +21,28 @@ pub mod song_filter;
 pub mod song_mutation;
 pub mod song_query;
 pub mod sqlite;
+mod watcher;
 
 pub struct AppState {
     pub zmp: PlayerManager<SqliteImpl, Sqlite>,
+    pub watcher: Arc<watcher::MusicFolderWatcher<SqliteImpl, Sqlite>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::process_music_folder,
             commands::load,
+            commands::get_app_settings_snapshot,
+            commands::reload_song_list_after_library_change,
             commands::commit_preview_search,
             commands::preview_search_songs,
             commands::get_music_folder_path,
@@ -47,12 +60,18 @@ pub fn run() {
             commands::previous_song,
             commands::get_current_song_seek,
             commands::set_current_song_seek,
+            commands::increase_current_song_seek_by_seconds,
+            commands::decrease_current_song_seek_by_seconds,
             commands::save_current_song_seek,
             commands::get_is_player_paused,
             commands::get_play_pause,
             commands::set_play_pause,
+            commands::get_always_start_paused,
+            commands::set_always_start_paused,
             commands::get_volume,
             commands::set_volume,
+            commands::increase_volume_by,
+            commands::decrease_volume_by,
             commands::get_random,
             commands::set_random,
             commands::get_repeat,
@@ -73,6 +92,24 @@ pub fn run() {
             commands::set_play_pause_keybind,
             commands::get_focus_search_keybind,
             commands::set_focus_search_keybind,
+            commands::get_increase_volume_keybind,
+            commands::set_increase_volume_keybind,
+            commands::get_decrease_volume_keybind,
+            commands::set_decrease_volume_keybind,
+            commands::get_seek_forward_keybind,
+            commands::set_seek_forward_keybind,
+            commands::get_seek_backward_keybind,
+            commands::set_seek_backward_keybind,
+            commands::get_filter_menu_keybind,
+            commands::set_filter_menu_keybind,
+            commands::get_song_filter_menu_keybind,
+            commands::set_song_filter_menu_keybind,
+            commands::get_keybind_settings_keybind,
+            commands::set_keybind_settings_keybind,
+            commands::get_switch_song_filter_pane_keybind,
+            commands::set_switch_song_filter_pane_keybind,
+            commands::get_apply_selected_filter_keybind,
+            commands::set_apply_selected_filter_keybind,
             commands::create_filter,
             commands::get_filters,
             commands::remove_filter,
@@ -85,9 +122,19 @@ pub fn run() {
                 let config = config::Config::new(app).await.unwrap();
                 let path = config.sqlite_path().await.unwrap();
                 let pool = sqlite::new(&path).await.unwrap();
+                let zmp = PlayerManager::new(pool.clone(), SqliteImpl {}).await;
+                let watcher = Arc::new(MusicFolderWatcher::new(
+                    app.handle().clone(),
+                    pool,
+                    SqliteImpl {},
+                ));
+
                 app.manage(AppState {
-                    zmp: PlayerManager::new(pool, SqliteImpl {}).await,
+                    zmp,
+                    watcher: watcher.clone(),
                 });
+
+                tauri::async_runtime::spawn(watcher.run());
             });
             Ok(())
         })

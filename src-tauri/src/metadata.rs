@@ -3,7 +3,10 @@ use crate::search_blob::build_search_blob;
 use crate::song::Song;
 use std::borrow::Cow;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
+};
 
 use id3::TagLike;
 use lofty::aac::AacFile;
@@ -31,7 +34,6 @@ struct SongMetadata {
     artist: String,
     album: Option<String>,
     year: Option<i32>,
-    path: String,
     duration: u64,
     remix: Option<String>,
     ext: String,
@@ -40,6 +42,14 @@ struct SongMetadata {
 struct FallbackMetadata {
     title: String,
     artist: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DiscoveredMusicFile {
+    pub path: PathBuf,
+    pub file_path: String,
+    pub file_size: i64,
+    pub file_modified_millis: i64,
 }
 
 #[derive(Default)]
@@ -51,7 +61,7 @@ impl MetadataParser {
     }
 
     fn should_fetch_metadata_year_id3(&self, year: i32, tag_type: TagType) -> bool {
-        return year == 0 && (tag_type == TagType::Id3v2 || tag_type == TagType::Id3v1);
+        year == 0 && (tag_type == TagType::Id3v2 || tag_type == TagType::Id3v1)
     }
 
     fn read_metadata(&self, file_path: &Path) -> anyhow::Result<SongMetadata> {
@@ -62,7 +72,6 @@ impl MetadataParser {
             year: None,
             remix: None,
             duration: 0,
-            path: file_path.to_string_lossy().to_string(),
             ext: file_path
                 .extension()
                 .and_then(|s| s.to_str())
@@ -126,44 +135,81 @@ impl MetadataParser {
         })
     }
 
-    pub fn parse_song_metadata(&self, music_folder_path: &Path) -> anyhow::Result<Vec<Song>> {
-        let music_folder_abs: PathBuf = std::fs::canonicalize(music_folder_path)?;
+    fn build_discovered_music_file(&self, file_path: &Path) -> anyhow::Result<DiscoveredMusicFile> {
+        let metadata = std::fs::metadata(file_path)?;
+        let file_size = i64::try_from(metadata.len()).unwrap_or(i64::MAX);
+        let file_modified_millis = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+            .unwrap_or(0);
 
-        let mut songs: Vec<Song> = vec![];
+        Ok(DiscoveredMusicFile {
+            path: file_path.to_path_buf(),
+            file_path: file_path.to_string_lossy().to_string(),
+            file_size,
+            file_modified_millis,
+        })
+    }
+
+    pub fn discover_music_files(
+        &self,
+        music_folder_path: &Path,
+    ) -> anyhow::Result<Vec<DiscoveredMusicFile>> {
+        let music_folder_abs: PathBuf = std::fs::canonicalize(music_folder_path)?;
+        let mut files = Vec::new();
+
         for entry in WalkDir::new(music_folder_abs)
             .into_iter()
             .filter_map(Result::ok)
-            .filter(|e| e.file_type().is_file())
+            .filter(|entry| entry.file_type().is_file())
         {
-            match self.read_metadata(entry.path()) {
-                Ok(metadata) => {
-                    let m_title = metadata.title;
-                    let m_artist = metadata.artist;
-                    let m_album = metadata.album.unwrap_or_default();
-                    let m_release_year = metadata.year.unwrap_or_default();
-                    let m_remix = metadata.remix.unwrap_or_default();
+            match self.build_discovered_music_file(entry.path()) {
+                Ok(file) => files.push(file),
+                Err(_) => continue,
+            }
+        }
 
-                    let search_blob = build_search_blob([
-                        &m_title,
-                        &m_artist,
-                        &m_album,
-                        &m_release_year.to_string(),
-                        &m_remix,
-                    ]);
+        files.sort();
+        Ok(files)
+    }
 
-                    songs.push(Song {
-                        id: 0,
-                        title: m_title,
-                        artist: m_artist,
-                        release_year: m_release_year,
-                        album: m_album,
-                        remix: m_remix,
-                        search_blob,
-                        file_path: metadata.path,
-                        duration: metadata.duration as i64,
-                        extension: metadata.ext,
-                    });
-                }
+    pub fn parse_discovered_music_file(
+        &self,
+        music_file: &DiscoveredMusicFile,
+    ) -> anyhow::Result<Song> {
+        let metadata = self.read_metadata(&music_file.path)?;
+        let title = metadata.title;
+        let artist = metadata.artist;
+        let album = metadata.album.unwrap_or_default();
+        let release_year = metadata.year.unwrap_or_default();
+        let remix = metadata.remix.unwrap_or_default();
+
+        let search_blob =
+            build_search_blob([&title, &artist, &album, &release_year.to_string(), &remix]);
+
+        Ok(Song {
+            id: 0,
+            title,
+            artist,
+            release_year,
+            album,
+            remix,
+            search_blob,
+            file_path: music_file.file_path.clone(),
+            duration: metadata.duration as i64,
+            extension: metadata.ext,
+            file_size: music_file.file_size,
+            file_modified_millis: music_file.file_modified_millis,
+        })
+    }
+
+    pub fn parse_song_metadata(&self, music_folder_path: &Path) -> anyhow::Result<Vec<Song>> {
+        let mut songs: Vec<Song> = vec![];
+        for music_file in self.discover_music_files(music_folder_path)? {
+            match self.parse_discovered_music_file(&music_file) {
+                Ok(song) => songs.push(song),
                 Err(_) => {
                     continue;
                 }

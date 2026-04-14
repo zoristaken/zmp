@@ -4,28 +4,47 @@ use std::{
     sync::Mutex,
 };
 
+use serde::Serialize;
 use sqlx::{Database, Pool};
 
 use crate::{
     filter::{Filter, FilterRepository, FilterService},
     metadata::MetadataParser,
     player::{Player, QueueSyncResult},
-    setting::{SettingRepository, SettingService},
+    setting::{AppSettingsSnapshot, SettingRepository, SettingService},
     song::{Song, SongRepository, SongService},
     song_filter::{SongFilter, SongFilterRepository, SongFilterService},
     song_mutation::{SongMutationRepository, SongMutationService},
     song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//TODO (zor): current fails in playback change are not persisted in the database.
+//Should be a somewhat simple fix by adding a playable flag to the song table and
+//making the backend sync the flag state before sending to the frontend
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackChange {
     pub current_index: Option<usize>,
+    pub failed_song_ids: Vec<i32>,
+    pub should_emit_track_changed: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SongListChange {
     pub count: usize,
     pub current_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerLoadState {
+    pub count: usize,
+    pub current_index: Option<usize>,
+    pub volume: rodio::Float,
+    pub shuffle: bool,
+    pub repeat: bool,
+    pub failed_song_ids: Vec<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,21 +107,15 @@ where
         + Clone,
 {
     pub async fn new(pool: Pool<DB>, repos: R) -> Self {
-        let setting = SettingService::new(repos.clone());
-        let index = setting.get_saved_index(&pool).await;
-        let shuffle = setting.is_random_play(&pool).await;
-        let repeat = setting.is_repeat_flag(&pool).await;
-        let volume = setting.get_saved_volume_value(&pool).await;
-
         Self {
-            setting,
+            setting: SettingService::new(repos.clone()),
             song: SongService::new(repos.clone()),
             song_query: SongQueryService::new(repos.clone()),
             song_mutation: SongMutationService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             filter: FilterService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
-            player: Mutex::new(Player::new(Some(index), shuffle, repeat, volume)),
+            player: Mutex::new(Player::new()),
             preview_search: Mutex::new(None),
             pool,
         }
@@ -421,6 +434,28 @@ where
             .map(|song| song.song.file_path.clone()))
     }
 
+    async fn reload_song_list(&self) -> anyhow::Result<SongListChange> {
+        let mut tx = self.pool.begin().await?;
+        let pinned_song_id = self.current_song_id()?;
+        let songs = self.load_song_list_in_tx(&mut tx, pinned_song_id).await?;
+        let count = songs.len();
+
+        tx.commit().await?;
+
+        let sync = self.sync_song_list(songs)?;
+        let current_index = self.persist_queue_sync(sync).await?;
+
+        Ok(SongListChange {
+            count,
+            current_index,
+        })
+    }
+
+    pub async fn reload_song_list_after_library_change(&self) -> anyhow::Result<SongListChange> {
+        self.clear_preview_search()?;
+        self.reload_song_list().await
+    }
+
     fn current_song_id(&self) -> anyhow::Result<Option<i32>> {
         let player = self
             .player
@@ -479,15 +514,15 @@ where
         tx: &mut sqlx::Transaction<'_, DB>,
         pinned_song_id: Option<i32>,
     ) -> anyhow::Result<Vec<SongWithFilters>> {
-        let saved_search = self
-            .setting
-            .get_saved_search_blob(&mut *tx)
-            .await
-            .unwrap_or_default();
-        let song_list_limit = self.setting.get_song_list_limit(&mut *tx).await;
+        let query_settings = self.setting.get_song_list_query_settings(&mut *tx).await?;
 
         self.song_query
-            .query_song_list(&mut *tx, &saved_search, song_list_limit, pinned_song_id)
+            .query_song_list(
+                &mut *tx,
+                &query_settings.saved_search_blob,
+                query_settings.song_list_limit,
+                pinned_song_id,
+            )
             .await
     }
 
@@ -495,6 +530,12 @@ where
         self.player
             .lock()
             .map_err(|e| anyhow::anyhow!(e.to_string()))
+    }
+
+    fn current_player_seek_seconds(&self) -> anyhow::Result<usize> {
+        let player = self.lock_player()?;
+
+        Ok(player.seek_pos().as_secs() as usize)
     }
 
     fn sync_song_list(&self, songs: Vec<SongWithFilters>) -> anyhow::Result<QueueSyncResult> {
@@ -510,43 +551,53 @@ where
         Ok(sync.current_index)
     }
 
-    pub async fn load(&self) -> anyhow::Result<SongListChange> {
+    pub async fn load(&self) -> anyhow::Result<PlayerLoadState> {
         self.flush_deferred_song_filters_metadata().await?;
 
         let mut tx = self.pool.begin().await?;
         let pinned_song_id = self.current_song_id()?;
 
         let songs = self.load_song_list_in_tx(&mut tx, pinned_song_id).await?;
-        let is_shuffle = self.setting.is_random_play(&mut tx).await;
-        let is_repeat = self.setting.is_repeat_flag(&mut tx).await;
-        let saved_index = self.setting.get_saved_index(&mut tx).await;
-        let saved_seek = self.setting.get_current_song_seek(&mut tx).await;
-        let saved_play_pause_flag = self.setting.is_playing(&mut tx).await;
+        let player_settings = self.setting.get_player_settings_snapshot(&mut tx).await?;
         let count = songs.len();
 
         tx.commit().await?;
 
-        let current_index = {
+        let (current_index, playback) = {
             let mut player = self.lock_player()?;
-            player.load_saved_state(
-                is_shuffle,
-                is_repeat,
-                saved_index,
-                saved_seek,
-                saved_play_pause_flag,
+            player.set_volume(player_settings.volume);
+            let playback = player.load_saved_state(
+                player_settings.is_random,
+                player_settings.is_repeat,
+                player_settings.saved_index,
+                player_settings.saved_seek,
+                player_settings.is_playing && !player_settings.always_start_paused,
                 songs,
-            )?
+            )?;
+            (player.current_index(), playback)
         };
 
-        self.setting
-            .set_saved_index(&self.pool, current_index.unwrap_or(0))
-            .await?;
+        if !playback.failed_song_ids.is_empty() && current_index.is_none() {
+            self.setting.persist_started_track(&self.pool, None).await?;
+        } else {
+            self.setting
+                .set_saved_index(&self.pool, current_index.unwrap_or(0))
+                .await?;
+        }
         self.flush_deferred_song_filters_metadata().await?;
 
-        Ok(SongListChange {
+        Ok(PlayerLoadState {
             count,
             current_index,
+            volume: player_settings.volume,
+            shuffle: player_settings.is_random,
+            repeat: player_settings.is_repeat,
+            failed_song_ids: playback.failed_song_ids,
         })
+    }
+
+    pub async fn get_app_settings_snapshot(&self) -> anyhow::Result<AppSettingsSnapshot> {
+        self.setting.get_app_settings_snapshot(&self.pool).await
     }
 
     pub async fn get_music_folder_path(&self) -> String {
@@ -602,18 +653,27 @@ where
     }
 
     pub async fn play_song_at(&self, index: usize) -> anyhow::Result<PlaybackChange> {
-        let current_index = {
+        let result = {
             let mut player = self.lock_player()?;
-            player.play_song_at(index, true, true)?;
-            player.current_index()
+            let playback = player.play_song_at(index, true, true)?;
+
+            PlaybackChange {
+                current_index: player.current_index(),
+                failed_song_ids: playback.failed_song_ids,
+                should_emit_track_changed: playback.should_emit_track_changed,
+            }
         };
 
-        self.setting
-            .persist_started_track(&self.pool, current_index)
-            .await?;
+        if result.should_emit_track_changed {
+            self.setting
+                .persist_started_track(&self.pool, result.current_index)
+                .await?;
+        } else if result.current_index.is_none() {
+            self.setting.persist_started_track(&self.pool, None).await?;
+        }
         self.flush_deferred_song_filters_metadata().await?;
 
-        Ok(PlaybackChange { current_index })
+        Ok(result)
     }
 
     pub async fn query_song_list(&self, query: &str) -> anyhow::Result<Vec<SongWithFilters>> {
@@ -654,46 +714,89 @@ where
     }
 
     pub async fn next_song(&self) -> anyhow::Result<PlaybackChange> {
-        let current_index = {
+        let result = {
             let mut player = self.lock_player()?;
-            player.next_song()?;
-            player.current_index()
+            let playback = player.next_song()?;
+
+            PlaybackChange {
+                current_index: player.current_index(),
+                failed_song_ids: playback.failed_song_ids,
+                should_emit_track_changed: playback.should_emit_track_changed,
+            }
         };
 
-        self.setting
-            .persist_started_track(&self.pool, current_index)
-            .await?;
+        if result.should_emit_track_changed {
+            self.setting
+                .persist_started_track(&self.pool, result.current_index)
+                .await?;
+        } else if result.current_index.is_none() {
+            self.setting.persist_started_track(&self.pool, None).await?;
+        }
         self.flush_deferred_song_filters_metadata().await?;
 
-        Ok(PlaybackChange { current_index })
+        Ok(result)
     }
 
     pub async fn previous_song(&self) -> anyhow::Result<PlaybackChange> {
-        let current_index = {
+        let result = {
             let mut player = self.lock_player()?;
-            player.previous()?;
-            player.current_index()
+            let playback = player.previous_song()?;
+
+            PlaybackChange {
+                current_index: player.current_index(),
+                failed_song_ids: playback.failed_song_ids,
+                should_emit_track_changed: playback.should_emit_track_changed,
+            }
         };
 
-        self.setting
-            .persist_started_track(&self.pool, current_index)
-            .await?;
+        if result.should_emit_track_changed {
+            self.setting
+                .persist_started_track(&self.pool, result.current_index)
+                .await?;
+        } else if result.current_index.is_none() {
+            self.setting.persist_started_track(&self.pool, None).await?;
+        }
         self.flush_deferred_song_filters_metadata().await?;
 
-        Ok(PlaybackChange { current_index })
+        Ok(result)
     }
 
     pub async fn get_current_song_seek(&self) -> usize {
-        self.setting.get_current_song_seek(&self.pool).await
+        log::info!("entered get_current_song_seek");
+        match self.current_player_seek_seconds() {
+            Ok(seek_value) => seek_value,
+            Err(_) => self.setting.get_current_song_seek(&self.pool).await,
+        }
     }
 
-    pub async fn save_current_song_seek(&self, seek_value: usize) -> anyhow::Result<()> {
+    pub async fn save_current_song_seek(&self, seek_value: usize) -> anyhow::Result<usize> {
+        log::info!("entered save_current_song_seek");
+        let seek_value = self.current_player_seek_seconds().unwrap_or(seek_value);
+
         self.setting
             .set_current_song_seek(&self.pool, seek_value)
-            .await
+            .await?;
+
+        Ok(seek_value)
+    }
+
+    pub async fn increase_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
+        log::info!("entered increase_current_song_seek_by_seconds");
+        let seek_value = { self.lock_player()?.seek_pos() };
+        let new_seek_value = seek_value.as_secs().saturating_add(seconds);
+        self.set_current_song_seek(new_seek_value as usize).await
+    }
+
+    pub async fn decrease_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
+        log::info!("entered decrease_current_song_seek_by_seconds");
+        let seek_value = { self.lock_player()?.seek_pos() };
+        let new_seek_value = seek_value.as_secs().saturating_sub(seconds);
+        self.set_current_song_seek(new_seek_value as usize).await
     }
 
     pub async fn set_current_song_seek(&self, seek_value: usize) -> anyhow::Result<()> {
+        log::info!("entered set_current_song_seek");
+
         self.setting
             .set_current_song_seek(&self.pool, seek_value)
             .await?;
@@ -715,8 +818,32 @@ where
         Ok(())
     }
 
+    pub async fn get_always_start_paused(&self) -> bool {
+        self.setting.should_always_start_paused(&self.pool).await
+    }
+
+    pub async fn set_always_start_paused(&self, flag: bool) -> anyhow::Result<()> {
+        self.setting.set_always_start_paused(&self.pool, flag).await
+    }
+
     pub async fn get_volume(&self) -> rodio::Float {
         self.setting.get_saved_volume_value(&self.pool).await
+    }
+
+    pub async fn increase_volume_by(&self, value: rodio::Float) -> anyhow::Result<()> {
+        let current_volume = { self.lock_player()?.get_volume() };
+
+        let new_volume = current_volume + value;
+
+        self.set_volume(new_volume).await
+    }
+
+    pub async fn decrease_volume_by(&self, value: rodio::Float) -> anyhow::Result<()> {
+        let current_volume = { self.lock_player()?.get_volume() };
+
+        let new_volume = current_volume - value;
+
+        self.set_volume(new_volume).await
     }
 
     pub async fn set_volume(&self, volume: rodio::Float) -> anyhow::Result<()> {
@@ -939,5 +1066,20 @@ where
         (get_next_keybind, set_next_keybind),
         (get_previous_keybind, set_previous_keybind),
         (get_play_pause_keybind, set_play_pause_keybind),
+        (get_increase_volume_keybind, set_increase_volume_keybind),
+        (get_decrease_volume_keybind, set_decrease_volume_keybind),
+        (get_seek_forward_keybind, set_seek_forward_keybind),
+        (get_seek_backward_keybind, set_seek_backward_keybind),
+        (get_filter_menu_keybind, set_filter_menu_keybind),
+        (get_song_filter_menu_keybind, set_song_filter_menu_keybind),
+        (get_keybind_settings_keybind, set_keybind_settings_keybind),
+        (
+            get_switch_song_filter_pane_keybind,
+            set_switch_song_filter_pane_keybind
+        ),
+        (
+            get_apply_selected_filter_keybind,
+            set_apply_selected_filter_keybind
+        ),
     );
 }

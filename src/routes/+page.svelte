@@ -32,6 +32,8 @@
     filter_id: number;
   };
 
+  type SongFilterPane = "current" | "available";
+
   type Song = {
     song: {
       id: number;
@@ -52,6 +54,11 @@
     currentIndex: number | null;
   };
 
+  type LibraryChangedPayload = {
+    count: number;
+    currentIndex: number | null;
+  };
+
   type KeybindAction =
     | "playPause"
     | "previous"
@@ -59,10 +66,41 @@
     | "repeat"
     | "shuffle"
     | "mute"
+    | "increaseVolume"
+    | "decreaseVolume"
+    | "seekForward"
+    | "seekBackward"
     | "toggleSearch"
-    | "toggleSettings";
+    | "toggleSettings"
+    | "openKeybindSettings"
+    | "toggleFilterMenu"
+    | "toggleSongFilterMenu"
+    | "switchSongFilterPane"
+    | "applySelectedFilter";
 
   type KeybindMap = Record<KeybindAction, string>;
+
+  type AppSettingsSnapshot = {
+    musicFolderPath: string;
+    hasProcessedMusicFolder: boolean;
+    savedSearchBlob: string;
+    songListLimit: number;
+    alwaysStartPaused: boolean;
+    keybinds: KeybindMap;
+  };
+
+  type PlayerLoadState = {
+    count: number;
+    currentIndex: number | null;
+    volume: number;
+    shuffle: boolean;
+    repeat: boolean;
+    failedSongIds: number[];
+  };
+
+  type PlaybackFeedback = {
+    failedSongIds: number[];
+  };
 
   const defaultKeybinds: KeybindMap = {
     playPause: "Space",
@@ -71,8 +109,17 @@
     repeat: "R",
     shuffle: "S",
     mute: "M",
+    increaseVolume: "ArrowUp",
+    decreaseVolume: "ArrowDown",
+    seekForward: "ArrowRight",
+    seekBackward: "ArrowLeft",
     toggleSearch: "Ctrl+E",
     toggleSettings: "Z",
+    openKeybindSettings: "K",
+    toggleFilterMenu: "F",
+    toggleSongFilterMenu: "C",
+    switchSongFilterPane: "X",
+    applySelectedFilter: "Enter",
   };
 
   const keybindLabels: Record<KeybindAction, string> = {
@@ -82,19 +129,17 @@
     repeat: "Repeat",
     shuffle: "Shuffle",
     mute: "Mute / Unmute",
+    increaseVolume: "Increase volume by 5%",
+    decreaseVolume: "Decrease volume by 5%",
+    seekForward: "Seek forward 5 seconds",
+    seekBackward: "Seek backward 5 seconds",
     toggleSearch: "Focus / Unfocus search",
-    toggleSettings: "Open / Close settings",
-  };
-
-  const getKeybindCommands: Record<KeybindAction, string> = {
-    playPause: "get_play_pause_keybind",
-    previous: "get_previous_keybind",
-    next: "get_next_keybind",
-    repeat: "get_repeat_keybind",
-    shuffle: "get_shuffle_keybind",
-    mute: "get_mute_keybind",
-    toggleSearch: "get_focus_search_keybind",
-    toggleSettings: "get_settings_keybind",
+    toggleSettings: "Toggle general settings",
+    openKeybindSettings: "Toggle keybind settings",
+    toggleFilterMenu: "Open / Close filter library",
+    toggleSongFilterMenu: "Open / Close current song filters",
+    switchSongFilterPane: "Switch current / available filters",
+    applySelectedFilter: "Confirm warning / apply selected filter",
   };
 
   const setKeybindCommands: Record<KeybindAction, string> = {
@@ -104,9 +149,24 @@
     repeat: "set_repeat_keybind",
     shuffle: "set_shuffle_keybind",
     mute: "set_mute_keybind",
+    increaseVolume: "set_increase_volume_keybind",
+    decreaseVolume: "set_decrease_volume_keybind",
+    seekForward: "set_seek_forward_keybind",
+    seekBackward: "set_seek_backward_keybind",
     toggleSearch: "set_focus_search_keybind",
     toggleSettings: "set_settings_keybind",
+    openKeybindSettings: "set_keybind_settings_keybind",
+    toggleFilterMenu: "set_filter_menu_keybind",
+    toggleSongFilterMenu: "set_song_filter_menu_keybind",
+    switchSongFilterPane: "set_switch_song_filter_pane_keybind",
+    applySelectedFilter: "set_apply_selected_filter_keybind",
   };
+
+  const KEYBIND_VOLUME_STEP = 0.05;
+  const KEYBIND_VOLUME_STEP_PERCENT = KEYBIND_VOLUME_STEP * 100;
+  const KEYBIND_SEEK_STEP_SECONDS = 5;
+  const FILTER_MODAL_BASE_HEIGHT_PX = 720;
+  const SETTINGS_MODAL_BASE_HEIGHT_PX = 880;
 
   let isPlaying = false;
   let isShuffle = false;
@@ -129,25 +189,41 @@
   let isSeeking = false;
   let isProgrammaticSeekReset = false;
   let isDraggingSeek = false;
+  let isCommittingSeek = false;
 
   let volumeTimeout: ReturnType<typeof setTimeout> | undefined;
   let playbackInterval: ReturnType<typeof setInterval> | undefined;
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
   let songRowElements: Array<HTMLDivElement | null> = [];
   let appShellElement: HTMLDivElement | null = null;
+  let songListElement: HTMLDivElement | null = null;
+  let songFilterModalElement: HTMLDivElement | null = null;
+  let filterLibraryModalElement: HTMLDivElement | null = null;
+  let musicFolderConfirmModalElement: HTMLDivElement | null = null;
+  let filterDeleteConfirmModalElement: HTMLDivElement | null = null;
+  let settingsModalElement: HTMLDivElement | null = null;
+  let submenuTopInset = 16;
+  let submenuBottomInset = 16;
+  let shouldStretchSubmenuModals = false;
+  let shouldStretchSettingsModal = false;
 
   let hasInitialized = false;
   let lastCommittedSearchQuery = "";
   let lastDisplayedSearchQuery = "";
   let searchRequestVersion = 0;
+  let isRefreshingSeek = false;
+  let playbackFailedSongIds: number[] = [];
+  let playbackFailedSongIdSet = new Set<number>();
 
   let searchInput: HTMLInputElement | null = null;
+  let filterLibraryInput: HTMLInputElement | null = null;
   let volumeSlider: HTMLInputElement | null = null;
   let isSettingsOpen = false;
   let captureAction: KeybindAction | null = null;
   let keybinds: KeybindMap = { ...defaultKeybinds };
   let activeSettingsSection: "general" | "keybinds" = "general";
   let musicFolderPath = "";
+  let alwaysStartPaused = false;
   let isPickingMusicFolder = false;
   let hasProcessedMusicFolder = false;
   let isInitialSetupRequired = false;
@@ -165,15 +241,26 @@
   let isSongFilterMenuOpen = false;
   let songFilterTargetSong: Song | null = null;
   let songFilterLinksForTarget: SongFilter[] = [];
+  let songFilterActivePane: SongFilterPane = "current";
+  let songFilterCurrentSelectionIndex = 0;
+  let songFilterAvailableSelectionIndex = 0;
   let isAssigningSongFilter = false;
   let isRemovingSongFilter = false;
   let songFilterMessage = "";
 
   let isFilterLibraryMenuOpen = false;
+  let filterLibrarySelectionIndex = 0;
   let newFilterInput = "";
   let isSavingGlobalFilter = false;
   let isRemovingGlobalFilter = false;
   let filterLibraryMessage = "";
+  let pendingFilterDeletion: Filter | null = null;
+  let isFilterDeleteConfirmOpen = false;
+  let songFilterCurrentRowElements: Array<HTMLDivElement | null> = [];
+  let songFilterAvailableRowElements: Array<HTMLButtonElement | null> = [];
+  let filterLibraryRowElements: Array<HTMLDivElement | null> = [];
+
+  $: playbackFailedSongIdSet = new Set(playbackFailedSongIds);
 
   function hasMusicFolderPath(path: string): boolean {
     return path.trim().length > 0;
@@ -191,34 +278,65 @@
     return !isInitialSetupRequired;
   }
 
-  async function refreshSetupState() {
-    try {
-      musicFolderPath = await invoke<string>("get_music_folder_path");
-    } catch (err) {
-      console.error("Failed to load music folder path:", err);
-      musicFolderPath = "";
+  function applySavedVolumeState(savedVolume: number) {
+    volume = Math.round(savedVolume * 100);
+    previousVolume = volume > 0 ? volume : 50;
+    isMuted = volume === 0;
+  }
+
+  function forceOpenGeneralSettings() {
+    isSettingsOpen = true;
+    activeSettingsSection = "general";
+    captureAction = null;
+  }
+
+  function applySavedKeybinds(savedKeybinds: KeybindMap) {
+    const nextKeybinds = { ...defaultKeybinds };
+
+    for (const [action, value] of Object.entries(savedKeybinds) as Array<
+      [KeybindAction, string]
+    >) {
+      if (value) {
+        nextKeybinds[action] = value;
+      }
     }
 
-    try {
-      hasProcessedMusicFolder = await invoke<boolean>(
-        "has_processed_music_folder",
-      );
-    } catch (err) {
-      console.error("Failed to load processed music folder flag:", err);
-      hasProcessedMusicFolder = false;
-    }
+    keybinds = nextKeybinds;
+  }
 
-    try {
-      songListLimit = await invoke<number>("get_song_list_limit");
-      songListLimitInput = String(songListLimit);
-    } catch (err) {
-      console.error("Failed to load song list limit:", err);
-      songListLimit = 10000;
-      songListLimitInput = "10000";
-    }
-
+  function applyAppSettingsSnapshot(snapshot: AppSettingsSnapshot) {
+    musicFolderPath = snapshot.musicFolderPath;
+    hasProcessedMusicFolder = snapshot.hasProcessedMusicFolder;
+    searchQuery = snapshot.savedSearchBlob;
+    lastCommittedSearchQuery = normalizeSearchQuery(snapshot.savedSearchBlob);
+    lastDisplayedSearchQuery = lastCommittedSearchQuery;
+    songListLimit = snapshot.songListLimit;
+    songListLimitInput = String(songListLimit);
+    alwaysStartPaused = snapshot.alwaysStartPaused;
+    applySavedKeybinds(snapshot.keybinds);
     isInitialSetupRequired = requiresInitialSetup();
     hasLoadedSetupState = true;
+  }
+
+  async function refreshAppSettings() {
+    try {
+      applyAppSettingsSnapshot(
+        await invoke<AppSettingsSnapshot>("get_app_settings_snapshot"),
+      );
+    } catch (err) {
+      console.error("Failed to load app settings:", err);
+      musicFolderPath = "";
+      hasProcessedMusicFolder = false;
+      searchQuery = "";
+      lastCommittedSearchQuery = "";
+      lastDisplayedSearchQuery = "";
+      songListLimit = 10000;
+      songListLimitInput = "10000";
+      alwaysStartPaused = false;
+      keybinds = { ...defaultKeybinds };
+      isInitialSetupRequired = requiresInitialSetup();
+      hasLoadedSetupState = true;
+    }
   }
 
   function formatDuration(durationSeconds: number): string {
@@ -239,8 +357,58 @@
     );
   }
 
+  function clampSelectionIndex(index: number, itemCount: number): number {
+    if (itemCount <= 0) return 0;
+    return Math.max(0, Math.min(itemCount - 1, index));
+  }
+
+  function wrapSelectionIndex(
+    index: number,
+    itemCount: number,
+    delta: number,
+  ): number {
+    if (itemCount <= 0) return 0;
+    return (index + delta + itemCount) % itemCount;
+  }
+
   function sortFilters(filters: Filter[]): Filter[] {
     return [...filters].sort(compareFilters);
+  }
+
+  function getRootRemPx(): number {
+    if (typeof window === "undefined") return 16;
+
+    const rootFontSize = Number.parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
+
+    return Number.isFinite(rootFontSize) && rootFontSize > 0
+      ? rootFontSize
+      : 16;
+  }
+
+  function updateSubmenuModalMetrics() {
+    const viewportPadding = getRootRemPx();
+
+    if (!songListElement) {
+      submenuTopInset = viewportPadding;
+      submenuBottomInset = viewportPadding;
+      shouldStretchSubmenuModals = false;
+      shouldStretchSettingsModal = false;
+      return;
+    }
+
+    const rect = songListElement.getBoundingClientRect();
+
+    submenuTopInset = Math.max(viewportPadding, Math.round(rect.top));
+    submenuBottomInset = Math.max(
+      viewportPadding,
+      Math.round(window.innerHeight - rect.bottom),
+    );
+    shouldStretchSubmenuModals =
+      Math.round(rect.height) > FILTER_MODAL_BASE_HEIGHT_PX;
+    shouldStretchSettingsModal =
+      Math.round(rect.height) > SETTINGS_MODAL_BASE_HEIGHT_PX;
   }
 
   function stopPlaybackTicker() {
@@ -248,6 +416,23 @@
       clearInterval(playbackInterval);
       playbackInterval = undefined;
     }
+  }
+
+  function markPlaybackFailedSongs(songIds: number[]) {
+    if (songIds.length === 0) return;
+
+    playbackFailedSongIds = Array.from(
+      new Set([...playbackFailedSongIds, ...songIds]),
+    );
+  }
+
+  function clearPlaybackFailedSongs(songIds: number[]) {
+    if (songIds.length === 0) return;
+
+    const removed = new Set(songIds);
+    playbackFailedSongIds = playbackFailedSongIds.filter(
+      (songId) => !removed.has(songId),
+    );
   }
 
   async function ensureSelectedSongIsVisible() {
@@ -260,13 +445,13 @@
     row?.scrollIntoView({
       block: "center",
       inline: "nearest",
-      behavior: "smooth",
+      behavior: "instant",
     });
   }
 
   async function saveSeekProgress() {
     try {
-      await invoke("save_current_song_seek", {
+      currentSeekSeconds = await invoke<number>("save_current_song_seek", {
         seekValue: currentSeekSeconds,
       });
     } catch (err) {
@@ -287,17 +472,21 @@
     stopPlaybackTicker();
 
     playbackInterval = setInterval(() => {
-      if (!isPlaying || isSeeking || !currentSong) return;
+      if (!isPlaying || isSeeking || !currentSong || isRefreshingSeek) return;
 
-      if (currentSeekSeconds < currentSong.song.duration) {
-        currentSeekSeconds += 1;
-        void saveSeekProgress();
-        return;
-      }
+      void (async () => {
+        await syncSavedSeek();
 
-      stopPlaybackTicker();
-      resetSeekUi();
-      void next();
+        if (!isPlaying || isSeeking || !currentSong) return;
+
+        if (currentSeekSeconds < currentSong.song.duration) {
+          return;
+        }
+
+        stopPlaybackTicker();
+        resetSeekUi();
+        void next();
+      })();
     }, 1000);
   }
 
@@ -318,11 +507,67 @@
     currentSong = await invoke<Song | null>("get_current_song");
   }
 
+  async function initializeLibraryAndPlayerState() {
+    const state = await invoke<PlayerLoadState>("load");
+    searchResultCount = state.count;
+
+    applySavedVolumeState(state.volume);
+    isShuffle = state.shuffle;
+    isRepeat = state.repeat;
+
+    await refreshLoadedSongs();
+    await refreshAllFilters();
+
+    await handleTrackChange(state.currentIndex);
+    playbackFailedSongIds = [];
+    markPlaybackFailedSongs(state.failedSongIds);
+  }
+
+  async function handleLibraryChange() {
+    const payload = await invoke<LibraryChangedPayload>(
+      "reload_song_list_after_library_change",
+    );
+
+    await refreshAllFilters();
+
+    if (normalizeSearchQuery(searchQuery) !== lastCommittedSearchQuery) {
+      lastDisplayedSearchQuery = "";
+      await performSearch({ playResult: false, commit: false });
+    } else {
+      await refreshLoadedSongs();
+      searchResultCount = payload.count;
+    }
+
+    await handleTrackChange(payload.currentIndex);
+  }
+
   async function refreshSavedSeek() {
+    if (isRefreshingSeek) return;
+
+    isRefreshingSeek = true;
+
     try {
       currentSeekSeconds = await invoke<number>("get_current_song_seek");
     } catch (err) {
       console.error("Failed to get saved seek position:", err);
+    } finally {
+      isRefreshingSeek = false;
+    }
+  }
+
+  async function syncSavedSeek() {
+    if (isRefreshingSeek) return;
+
+    isRefreshingSeek = true;
+
+    try {
+      currentSeekSeconds = await invoke<number>("save_current_song_seek", {
+        seekValue: currentSeekSeconds,
+      });
+    } catch (err) {
+      console.error("Failed to save seek position:", err);
+    } finally {
+      isRefreshingSeek = false;
     }
   }
 
@@ -355,7 +600,16 @@
     resetSeekUi();
 
     await refreshCurrentSong();
-    await refreshSavedSeek();
+    const currentSongId = currentSong?.song.id ?? null;
+    const shouldUseImmediateSeekRefresh =
+      previousCurrentSongId === null ||
+      currentSongId === null ||
+      currentSongId === previousCurrentSongId;
+
+    if (shouldUseImmediateSeekRefresh) {
+      await refreshSavedSeek();
+    }
+
     await syncPlaybackState();
 
     if (currentSong) {
@@ -372,7 +626,6 @@
       selectedIndex = null;
     }
 
-    const currentSongId = currentSong?.song.id ?? null;
     if (shouldPreserveViewport && currentSongId === previousCurrentSongId) {
       const restoredIndex =
         previousSelectedSongId === null
@@ -429,7 +682,14 @@
     }
 
     try {
-      await invoke("play_song_at", { index: targetIndex });
+      const feedback = await invoke<PlaybackFeedback>("play_song_at", {
+        index: targetIndex,
+      });
+      if (feedback.failedSongIds.length === 0) {
+        clearPlaybackFailedSongs([targetSongId]);
+      } else {
+        markPlaybackFailedSongs(feedback.failedSongIds);
+      }
     } catch (err) {
       console.error("Failed to play selected song:", err);
     }
@@ -457,7 +717,8 @@
     await commitDisplayedPreviewQueue();
 
     try {
-      await invoke("previous_song");
+      const feedback = await invoke<PlaybackFeedback>("previous_song");
+      markPlaybackFailedSongs(feedback.failedSongIds);
     } catch (err) {
       console.error("Failed to go to previous song:", err);
     }
@@ -467,7 +728,8 @@
     await commitDisplayedPreviewQueue();
 
     try {
-      await invoke("next_song");
+      const feedback = await invoke<PlaybackFeedback>("next_song");
+      markPlaybackFailedSongs(feedback.failedSongIds);
     } catch (err) {
       console.error("Failed to go to next song:", err);
     }
@@ -501,7 +763,6 @@
     const shouldCommit = options?.commit ?? false;
     const previousCurrentSongId = currentSong?.song.id ?? null;
     const previousSelectedSongId = selectedSongId;
-    const previousSelectedIndex = selectedIndex;
     const normalizedQuery = normalizeSearchQuery(searchQuery);
 
     if (!shouldCommit && normalizedQuery === lastDisplayedSearchQuery) {
@@ -613,6 +874,8 @@
     if (volumeTimeout) clearTimeout(volumeTimeout);
 
     volumeTimeout = setTimeout(async () => {
+      volumeTimeout = undefined;
+
       try {
         await invoke("set_volume", { volume: nextVolume / 100 });
       } catch (err) {
@@ -621,7 +884,7 @@
     }, 50);
   }
 
-  function setVolumeValue(nextVolume: number) {
+  function syncVolumeUi(nextVolume: number): number {
     const clamped = Math.max(0, Math.min(100, Math.round(nextVolume)));
     volume = clamped;
 
@@ -632,6 +895,11 @@
       previousVolume = clamped;
     }
 
+    return clamped;
+  }
+
+  function setVolumeValue(nextVolume: number) {
+    const clamped = syncVolumeUi(nextVolume);
     queueVolumePersist(clamped);
   }
 
@@ -650,18 +918,96 @@
 
   async function toggleMute() {
     try {
+      if (volumeTimeout) {
+        clearTimeout(volumeTimeout);
+        volumeTimeout = undefined;
+      }
+
       if (isMuted || volume === 0) {
-        volume = previousVolume || 50;
-        isMuted = false;
+        syncVolumeUi(previousVolume || 50);
       } else {
-        previousVolume = volume || 50;
-        volume = 0;
-        isMuted = true;
+        syncVolumeUi(0);
       }
 
       await invoke("set_volume", { volume: volume / 100 });
     } catch (err) {
       console.error("Failed to toggle mute:", err);
+    }
+  }
+
+  async function flushPendingVolumePersist() {
+    if (!volumeTimeout) return;
+
+    clearTimeout(volumeTimeout);
+    volumeTimeout = undefined;
+
+    try {
+      await invoke("set_volume", { volume: volume / 100 });
+    } catch (err) {
+      console.error("Failed to flush pending volume change:", err);
+    }
+  }
+
+  async function stepVolumeBy(deltaPercent: number) {
+    try {
+      await flushPendingVolumePersist();
+
+      const command =
+        deltaPercent > 0 ? "increase_volume_by" : "decrease_volume_by";
+
+      await invoke(command, {
+        volume: KEYBIND_VOLUME_STEP,
+      });
+
+      syncVolumeUi(volume + deltaPercent);
+    } catch (err) {
+      console.error("Failed to change volume from keybind:", err);
+    }
+  }
+
+  async function stepSeekBy(deltaSeconds: number) {
+    if (!currentSong || isSeeking || isDraggingSeek || isCommittingSeek) return;
+
+    const duration = currentSong.song.duration;
+    const nextSeekSeconds = Math.max(
+      0,
+      Math.min(duration, currentSeekSeconds + deltaSeconds),
+    );
+
+    if (nextSeekSeconds === currentSeekSeconds) return;
+
+    if (deltaSeconds > 0 && nextSeekSeconds >= duration && isPlaying) {
+      stopPlaybackTicker();
+      resetSeekUi();
+      await next();
+      return;
+    }
+
+    try {
+      if (
+        deltaSeconds > 0 &&
+        nextSeekSeconds === currentSeekSeconds + KEYBIND_SEEK_STEP_SECONDS
+      ) {
+        await invoke("increase_current_song_seek_by_seconds", {
+          seekValue: KEYBIND_SEEK_STEP_SECONDS,
+        });
+      } else if (
+        deltaSeconds < 0 &&
+        currentSeekSeconds >= KEYBIND_SEEK_STEP_SECONDS &&
+        nextSeekSeconds === currentSeekSeconds - KEYBIND_SEEK_STEP_SECONDS
+      ) {
+        await invoke("decrease_current_song_seek_by_seconds", {
+          seekValue: KEYBIND_SEEK_STEP_SECONDS,
+        });
+      } else {
+        await invoke("set_current_song_seek", {
+          seekValue: nextSeekSeconds,
+        });
+      }
+
+      currentSeekSeconds = nextSeekSeconds;
+    } catch (err) {
+      console.error("Failed to seek from keybind:", err);
     }
   }
 
@@ -673,24 +1019,25 @@
   }
 
   async function commitSeek() {
-    if (isProgrammaticSeekReset || !currentSong) {
+    if (isProgrammaticSeekReset || !currentSong || isCommittingSeek) {
       isSeeking = false;
       isDraggingSeek = false;
       return;
     }
 
+    isCommittingSeek = true;
+    isDraggingSeek = false;
+
     try {
       await invoke("set_current_song_seek", {
         seekValue: currentSeekSeconds,
       });
-
-      await saveSeekProgress();
     } catch (err) {
       console.error("Failed to seek song:", err);
       resetSeekUi();
     } finally {
+      isCommittingSeek = false;
       isSeeking = false;
-      isDraggingSeek = false;
 
       if (isPlaying) {
         startPlaybackTicker();
@@ -703,7 +1050,9 @@
     await commitSeek();
   }
 
-  async function onSeekPointerUp() {
+  async function onSeekPointerUp(event: PointerEvent) {
+    blurFocusableTarget(event.currentTarget);
+
     if (!isDraggingSeek) return;
     await commitSeek();
   }
@@ -760,28 +1109,24 @@
     return parts.join("+");
   }
 
-  async function loadKeybinds() {
-    const nextKeybinds = { ...defaultKeybinds };
-
-    for (const action of Object.keys(defaultKeybinds) as KeybindAction[]) {
-      try {
-        const value = await invoke<string | null>(getKeybindCommands[action]);
-        if (value !== null && value !== undefined) {
-          nextKeybinds[action] = value;
-        }
-      } catch (err) {
-        console.error(`Failed to load keybind for ${action}:`, err);
-      }
-    }
-
-    keybinds = nextKeybinds;
-  }
-
   async function persistKeybind(action: KeybindAction, combo: string) {
     try {
       await invoke(setKeybindCommands[action], { keybind: combo });
     } catch (err) {
       console.error(`Failed to save keybind for ${action}:`, err);
+    }
+  }
+
+  async function toggleAlwaysStartPaused(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const nextValue = input.checked;
+
+    try {
+      await invoke("set_always_start_paused", { flag: nextValue });
+      alwaysStartPaused = nextValue;
+    } catch (err) {
+      console.error("Failed to save always-start-paused flag:", err);
+      input.checked = alwaysStartPaused;
     }
   }
 
@@ -853,7 +1198,22 @@
     isMusicFolderConfirmOpen = false;
     pendingMusicFolderPath = null;
     queueMicrotask(() => {
-      focusAppShellForShortcuts();
+      focusActiveSurface();
+    });
+  }
+
+  function requestGlobalFilterDeletion(filter: Filter) {
+    if (isRemovingGlobalFilter) return;
+
+    pendingFilterDeletion = filter;
+    isFilterDeleteConfirmOpen = true;
+  }
+
+  function closeFilterDeleteConfirm() {
+    isFilterDeleteConfirmOpen = false;
+    pendingFilterDeletion = null;
+    queueMicrotask(() => {
+      focusActiveSurface();
     });
   }
 
@@ -868,31 +1228,13 @@
     await tick();
 
     await invoke("process_music_folder");
-    await refreshSetupState();
-
+    hasProcessedMusicFolder = true;
     searchQuery = "";
     lastCommittedSearchQuery = "";
     lastDisplayedSearchQuery = "";
+    isInitialSetupRequired = requiresInitialSetup();
 
-    const count = await invoke<number>("load");
-    searchResultCount = count;
-
-    const savedVolume = await invoke<number>("get_volume");
-    const savedShuffle = await invoke<boolean>("get_random");
-    const savedRepeat = await invoke<boolean>("get_repeat");
-    const initialIndex = await invoke<number | null>("get_current_index");
-    const savedIsPlaying = await invoke<boolean>("get_play_pause");
-
-    volume = Math.round(savedVolume * 100);
-    previousVolume = volume > 0 ? volume : 50;
-    isMuted = volume === 0;
-    isShuffle = savedShuffle;
-    isRepeat = savedRepeat;
-    isPlaying = savedIsPlaying;
-
-    await refreshLoadedSongs();
-    await refreshAllFilters();
-    await handleTrackChange(initialIndex);
+    await initializeLibraryAndPlayerState();
 
     setupMessage = "Music folder processed successfully.";
     setupMessageKind = "success";
@@ -900,8 +1242,7 @@
     if (canCloseInitialSettings()) {
       closeSettings();
     } else {
-      isSettingsOpen = true;
-      activeSettingsSection = "general";
+      forceOpenGeneralSettings();
     }
   }
 
@@ -974,10 +1315,33 @@
     await saveSongListLimit();
   }
 
-  function openSettings() {
+  function openSettings(section: "general" | "keybinds" = "general") {
     isSettingsOpen = true;
     captureAction = null;
-    activeSettingsSection = "general";
+    activeSettingsSection = section;
+  }
+
+  function toggleSettingsSection(section: "general" | "keybinds") {
+    if (section === "keybinds" && !canCloseInitialSettings()) {
+      return;
+    }
+
+    if (!isSettingsOpen) {
+      openSettings(section);
+      return;
+    }
+
+    if (activeSettingsSection === section) {
+      if (canCloseInitialSettings()) {
+        closeSettings();
+      } else {
+        openSettings("general");
+      }
+
+      return;
+    }
+
+    openSettings(section);
   }
 
   function closeSettings() {
@@ -989,16 +1353,58 @@
     isSettingsOpen = false;
     captureAction = null;
     queueMicrotask(() => {
-      focusAppShellForShortcuts();
+      focusActiveSurface();
     });
   }
 
-  function toggleSettings() {
-    if (isSettingsOpen) {
-      closeSettings();
-    } else {
-      openSettings();
+  function openGeneralSettings() {
+    toggleSettingsSection("general");
+  }
+
+  function openKeybindSettings() {
+    toggleSettingsSection("keybinds");
+  }
+
+  function toggleFilterLibraryMenu() {
+    if (isFilterLibraryMenuOpen) {
+      closeFilterLibraryMenu();
+      return;
     }
+
+    if (isSettingsOpen || isSongFilterMenuOpen || isMusicFolderConfirmOpen) {
+      return;
+    }
+
+    openFilterLibraryMenu();
+  }
+
+  function getSongFilterShortcutTarget(): Song | null {
+    if (selectedSongId !== null) {
+      const selectedSong = songs.find(
+        (song) => song.song.id === selectedSongId,
+      );
+      if (selectedSong) {
+        return selectedSong;
+      }
+    }
+
+    return currentSong;
+  }
+
+  async function toggleSongFilterMenu() {
+    if (isSongFilterMenuOpen) {
+      closeSongFilterMenu();
+      return;
+    }
+
+    if (isSettingsOpen || isFilterLibraryMenuOpen || isMusicFolderConfirmOpen) {
+      return;
+    }
+
+    const targetSong = getSongFilterShortcutTarget();
+    if (!targetSong) return;
+
+    await openSongFilterMenu(targetSong);
   }
 
   function startKeyCapture(action: KeybindAction) {
@@ -1036,17 +1442,216 @@
   }
 
   function toggleSearchFocus() {
-    if (!searchInput) return;
+    const targetInput = isFilterLibraryMenuOpen
+      ? filterLibraryInput
+      : searchInput;
+    if (!targetInput) return;
 
-    const isSearchFocused = document.activeElement === searchInput;
+    const isSearchFocused = document.activeElement === targetInput;
 
     if (isSearchFocused) {
-      searchInput.blur();
+      targetInput.blur();
       return;
     }
 
-    searchInput.focus();
-    searchInput.select();
+    targetInput.focus();
+    targetInput.select();
+  }
+
+  function getSongFilterCurrentFilters(): Filter[] {
+    return songFilterTargetSong?.filters ?? [];
+  }
+
+  function getSongFilterAvailableFilters(): Filter[] {
+    return availableFiltersForSong(songFilterTargetSong);
+  }
+
+  function getSelectedSongFilter(): Filter | null {
+    if (songFilterActivePane === "current") {
+      return (
+        getSongFilterCurrentFilters()[songFilterCurrentSelectionIndex] ?? null
+      );
+    }
+
+    return (
+      getSongFilterAvailableFilters()[songFilterAvailableSelectionIndex] ?? null
+    );
+  }
+
+  function getSelectedLibraryFilter(): Filter | null {
+    return allFilters[filterLibrarySelectionIndex] ?? null;
+  }
+
+  function syncSongFilterSelectionState() {
+    const currentFilters = getSongFilterCurrentFilters();
+    const availableFilters = getSongFilterAvailableFilters();
+
+    songFilterCurrentSelectionIndex = clampSelectionIndex(
+      songFilterCurrentSelectionIndex,
+      currentFilters.length,
+    );
+    songFilterAvailableSelectionIndex = clampSelectionIndex(
+      songFilterAvailableSelectionIndex,
+      availableFilters.length,
+    );
+
+    if (currentFilters.length === 0 && availableFilters.length === 0) {
+      songFilterActivePane = "current";
+      return;
+    }
+
+    if (songFilterActivePane === "current" && currentFilters.length === 0) {
+      songFilterActivePane = "available";
+    } else if (
+      songFilterActivePane === "available" &&
+      availableFilters.length === 0
+    ) {
+      songFilterActivePane = "current";
+    }
+  }
+
+  async function scrollSongFilterSelectionIntoView() {
+    syncSongFilterSelectionState();
+    await tick();
+
+    const element =
+      songFilterActivePane === "current"
+        ? songFilterCurrentRowElements[songFilterCurrentSelectionIndex]
+        : songFilterAvailableRowElements[songFilterAvailableSelectionIndex];
+
+    element?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }
+
+  async function scrollFilterLibrarySelectionIntoView() {
+    filterLibrarySelectionIndex = clampSelectionIndex(
+      filterLibrarySelectionIndex,
+      allFilters.length,
+    );
+
+    await tick();
+
+    filterLibraryRowElements[filterLibrarySelectionIndex]?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }
+
+  function selectCurrentSongFilter(index: number) {
+    songFilterActivePane = "current";
+    songFilterCurrentSelectionIndex = clampSelectionIndex(
+      index,
+      getSongFilterCurrentFilters().length,
+    );
+    void scrollSongFilterSelectionIntoView();
+  }
+
+  function selectAvailableSongFilter(index: number) {
+    songFilterActivePane = "available";
+    songFilterAvailableSelectionIndex = clampSelectionIndex(
+      index,
+      getSongFilterAvailableFilters().length,
+    );
+    void scrollSongFilterSelectionIntoView();
+  }
+
+  function selectLibraryFilter(index: number) {
+    filterLibrarySelectionIndex = clampSelectionIndex(index, allFilters.length);
+    void scrollFilterLibrarySelectionIntoView();
+  }
+
+  function moveFilterSelection(delta: number) {
+    if (isSongFilterMenuOpen) {
+      syncSongFilterSelectionState();
+
+      if (songFilterActivePane === "current") {
+        const currentFilters = getSongFilterCurrentFilters();
+        if (currentFilters.length === 0) return;
+
+        songFilterCurrentSelectionIndex = wrapSelectionIndex(
+          songFilterCurrentSelectionIndex,
+          currentFilters.length,
+          delta,
+        );
+      } else {
+        const availableFilters = getSongFilterAvailableFilters();
+        if (availableFilters.length === 0) return;
+
+        songFilterAvailableSelectionIndex = wrapSelectionIndex(
+          songFilterAvailableSelectionIndex,
+          availableFilters.length,
+          delta,
+        );
+      }
+
+      void scrollSongFilterSelectionIntoView();
+      return;
+    }
+
+    if (!isFilterLibraryMenuOpen || allFilters.length === 0) return;
+
+    filterLibrarySelectionIndex = wrapSelectionIndex(
+      filterLibrarySelectionIndex,
+      allFilters.length,
+      delta,
+    );
+    void scrollFilterLibrarySelectionIntoView();
+  }
+
+  function switchSongFilterPane() {
+    if (!isSongFilterMenuOpen) return;
+
+    const currentFilters = getSongFilterCurrentFilters();
+    const availableFilters = getSongFilterAvailableFilters();
+
+    if (currentFilters.length > 0 && availableFilters.length > 0) {
+      songFilterActivePane =
+        songFilterActivePane === "current" ? "available" : "current";
+    } else if (availableFilters.length > 0) {
+      songFilterActivePane = "available";
+    } else if (currentFilters.length > 0) {
+      songFilterActivePane = "current";
+    } else {
+      return;
+    }
+
+    void scrollSongFilterSelectionIntoView();
+  }
+
+  async function applySelectedFilterAction() {
+    if (isFilterDeleteConfirmOpen) {
+      await confirmGlobalFilterDeletion();
+      return;
+    }
+
+    if (isMusicFolderConfirmOpen) {
+      await confirmMusicFolderReplacement();
+      return;
+    }
+
+    if (isSongFilterMenuOpen) {
+      syncSongFilterSelectionState();
+
+      const selectedFilter = getSelectedSongFilter();
+      if (!selectedFilter) return;
+
+      if (songFilterActivePane === "current") {
+        await removeFilterFromSong(selectedFilter);
+      } else {
+        await assignExistingFilterToSong(selectedFilter);
+      }
+
+      return;
+    }
+
+    if (!isFilterLibraryMenuOpen) return;
+
+    const selectedFilter = getSelectedLibraryFilter();
+    if (!selectedFilter) return;
+
+    requestGlobalFilterDeletion(selectedFilter);
   }
 
   function blurActiveElement() {
@@ -1054,6 +1659,23 @@
     if (activeElement instanceof HTMLElement) {
       activeElement.blur();
     }
+  }
+
+  function blurFocusableTarget(target: EventTarget | null) {
+    if (target instanceof HTMLElement) {
+      target.blur();
+    }
+  }
+
+  function handleClickableRowKeydown(event: KeyboardEvent, action: () => void) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+
+    event.preventDefault();
+    action();
+  }
+
+  function handleSliderPointerUp(event: PointerEvent) {
+    blurFocusableTarget(event.currentTarget);
   }
 
   async function setKeybind(action: KeybindAction, combo: string) {
@@ -1083,9 +1705,19 @@
         await play();
         break;
       case "previous":
+        if (isSongFilterMenuOpen || isFilterLibraryMenuOpen) {
+          moveFilterSelection(-1);
+          return;
+        }
+
         await previous();
         break;
       case "next":
+        if (isSongFilterMenuOpen || isFilterLibraryMenuOpen) {
+          moveFilterSelection(1);
+          return;
+        }
+
         await next();
         break;
       case "repeat":
@@ -1097,11 +1729,38 @@
       case "mute":
         await toggleMute();
         break;
+      case "increaseVolume":
+        await stepVolumeBy(KEYBIND_VOLUME_STEP_PERCENT);
+        break;
+      case "decreaseVolume":
+        await stepVolumeBy(-KEYBIND_VOLUME_STEP_PERCENT);
+        break;
+      case "seekForward":
+        await stepSeekBy(KEYBIND_SEEK_STEP_SECONDS);
+        break;
+      case "seekBackward":
+        await stepSeekBy(-KEYBIND_SEEK_STEP_SECONDS);
+        break;
       case "toggleSearch":
         toggleSearchFocus();
         return;
       case "toggleSettings":
-        toggleSettings();
+        openGeneralSettings();
+        return;
+      case "openKeybindSettings":
+        openKeybindSettings();
+        return;
+      case "toggleFilterMenu":
+        toggleFilterLibraryMenu();
+        return;
+      case "toggleSongFilterMenu":
+        await toggleSongFilterMenu();
+        return;
+      case "switchSongFilterPane":
+        switchSongFilterPane();
+        return;
+      case "applySelectedFilter":
+        await applySelectedFilterAction();
         return;
     }
 
@@ -1149,8 +1808,7 @@
         err instanceof Error ? err.message : "Failed to process music folder.";
       setupMessageKind = "error";
       isInitialSetupRequired = requiresInitialSetup();
-      isSettingsOpen = true;
-      activeSettingsSection = "general";
+      forceOpenGeneralSettings();
     } finally {
       isPickingMusicFolder = false;
     }
@@ -1182,17 +1840,21 @@
     const matchedEntry = (
       Object.entries(keybinds) as Array<[KeybindAction, string]>
     ).find(([, value]) => value && value === combo);
+    const targetIsEditable = isEditableTarget(event.target);
 
     if (
       isSettingsOpen ||
       isSongFilterMenuOpen ||
       isFilterLibraryMenuOpen ||
-      isMusicFolderConfirmOpen
+      isMusicFolderConfirmOpen ||
+      isFilterDeleteConfirmOpen
     ) {
       if (event.key === "Escape") {
         event.preventDefault();
 
-        if (isMusicFolderConfirmOpen) {
+        if (isFilterDeleteConfirmOpen) {
+          closeFilterDeleteConfirm();
+        } else if (isMusicFolderConfirmOpen) {
           closeMusicFolderConfirm();
         } else if (isSongFilterMenuOpen) {
           closeSongFilterMenu();
@@ -1206,13 +1868,34 @@
       }
 
       if (
-        matchedEntry?.[0] === "toggleSettings" &&
-        isSettingsOpen &&
-        canCloseInitialSettings()
+        matchedEntry &&
+        ((matchedEntry[0] === "toggleSettings" &&
+          isSettingsOpen &&
+          canCloseInitialSettings()) ||
+          (matchedEntry[0] === "openKeybindSettings" &&
+            isSettingsOpen &&
+            canCloseInitialSettings()) ||
+          (matchedEntry[0] === "toggleSearch" && isFilterLibraryMenuOpen) ||
+          (matchedEntry[0] === "toggleFilterMenu" && isFilterLibraryMenuOpen) ||
+          (matchedEntry[0] === "toggleSongFilterMenu" &&
+            isSongFilterMenuOpen) ||
+          ((matchedEntry[0] === "previous" || matchedEntry[0] === "next") &&
+            (isSongFilterMenuOpen || isFilterLibraryMenuOpen)) ||
+          (matchedEntry[0] === "switchSongFilterPane" &&
+            isSongFilterMenuOpen) ||
+          (matchedEntry[0] === "applySelectedFilter" &&
+            (isSongFilterMenuOpen ||
+              isFilterLibraryMenuOpen ||
+              isMusicFolderConfirmOpen ||
+              isFilterDeleteConfirmOpen)))
       ) {
+        if (targetIsEditable && matchedEntry[0] !== "toggleSearch") {
+          return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
-        toggleSettings();
+        await runKeybindAction(matchedEntry[0]);
       }
 
       return;
@@ -1220,7 +1903,6 @@
 
     if (!matchedEntry) return;
 
-    const targetIsEditable = isEditableTarget(event.target);
     const action = matchedEntry[0];
 
     if (targetIsEditable && action !== "toggleSearch") {
@@ -1237,6 +1919,11 @@
     songFilterTargetSong = song;
     songFilterMessage = "";
     songFilterLinksForTarget = [];
+    songFilterActivePane = song.filters.length > 0 ? "current" : "available";
+    songFilterCurrentSelectionIndex = 0;
+    songFilterAvailableSelectionIndex = 0;
+    songFilterCurrentRowElements = [];
+    songFilterAvailableRowElements = [];
     isSongFilterMenuOpen = true;
 
     try {
@@ -1249,6 +1936,9 @@
     } catch (err) {
       console.error("Failed to load song filters:", err);
       songFilterMessage = "Failed to load filters for this song.";
+    } finally {
+      syncSongFilterSelectionState();
+      void scrollSongFilterSelectionIntoView();
     }
   }
 
@@ -1259,25 +1949,37 @@
     songFilterMessage = "";
     isAssigningSongFilter = false;
     isRemovingSongFilter = false;
+    songFilterActivePane = "current";
+    songFilterCurrentSelectionIndex = 0;
+    songFilterAvailableSelectionIndex = 0;
+    songFilterCurrentRowElements = [];
+    songFilterAvailableRowElements = [];
     queueMicrotask(() => {
-      focusAppShellForShortcuts();
+      focusActiveSurface();
     });
   }
 
   function openFilterLibraryMenu() {
     newFilterInput = "";
     filterLibraryMessage = "";
+    filterLibrarySelectionIndex = 0;
+    filterLibraryRowElements = [];
     isFilterLibraryMenuOpen = true;
+    void scrollFilterLibrarySelectionIntoView();
   }
 
   function closeFilterLibraryMenu() {
     isFilterLibraryMenuOpen = false;
+    isFilterDeleteConfirmOpen = false;
+    pendingFilterDeletion = null;
     newFilterInput = "";
     filterLibraryMessage = "";
+    filterLibrarySelectionIndex = 0;
     isSavingGlobalFilter = false;
     isRemovingGlobalFilter = false;
+    filterLibraryRowElements = [];
     queueMicrotask(() => {
-      focusAppShellForShortcuts();
+      focusActiveSurface();
     });
   }
 
@@ -1390,6 +2092,8 @@
 
       const savedFilters = mapSongFiltersToFilters(savedSongFilters);
       updateSongFiltersLocally(targetSongId, savedFilters);
+      syncSongFilterSelectionState();
+      void scrollSongFilterSelectionIntoView();
       songFilterMessage = `Added "${filter.name}".`;
     } catch (err) {
       console.error("Failed to assign filter to song:", err);
@@ -1444,6 +2148,8 @@
 
       const savedFilters = mapSongFiltersToFilters(savedSongFilters);
       updateSongFiltersLocally(targetSongId, savedFilters);
+      syncSongFilterSelectionState();
+      void scrollSongFilterSelectionIntoView();
 
       songFilterMessage = `Removed "${filter.name}".`;
     } catch (err) {
@@ -1472,6 +2178,14 @@
 
       const savedFilters = await invoke<Filter[]>("get_filters");
       allFilters = sortFilters(savedFilters);
+
+      const createdIndex = allFilters.findIndex(
+        (filter) => filter.name.toLowerCase() === trimmed.toLowerCase(),
+      );
+      if (createdIndex >= 0) {
+        filterLibrarySelectionIndex = createdIndex;
+        void scrollFilterLibrarySelectionIntoView();
+      }
 
       const wasSaved = savedFilters.some(
         (filter) => filter.name.toLowerCase() === trimmed.toLowerCase(),
@@ -1514,6 +2228,11 @@
       }
 
       allFilters = sortFilters(savedFilters);
+      filterLibrarySelectionIndex = clampSelectionIndex(
+        filterLibrarySelectionIndex,
+        allFilters.length,
+      );
+      void scrollFilterLibrarySelectionIntoView();
       removeFilterFromAllSongsLocally(filter.id);
       filterLibraryMessage = `Removed "${filter.name}".`;
     } catch (err) {
@@ -1522,6 +2241,14 @@
     } finally {
       isRemovingGlobalFilter = false;
     }
+  }
+
+  async function confirmGlobalFilterDeletion() {
+    if (!pendingFilterDeletion) return;
+
+    const filter = pendingFilterDeletion;
+    closeFilterDeleteConfirm();
+    await removeGlobalFilter(filter);
   }
 
   async function handleCreateFilterKeydown(event: KeyboardEvent) {
@@ -1536,6 +2263,17 @@
 
     const usedIds = new Set(song.filters.map((filter) => filter.id));
     return sortFilters(allFilters.filter((filter) => !usedIds.has(filter.id)));
+  }
+
+  $: if (isSongFilterMenuOpen) {
+    syncSongFilterSelectionState();
+  }
+
+  $: if (isFilterLibraryMenuOpen) {
+    filterLibrarySelectionIndex = clampSelectionIndex(
+      filterLibrarySelectionIndex,
+      allFilters.length,
+    );
   }
 
   function focusAppShellForShortcuts() {
@@ -1555,10 +2293,143 @@
     appShellElement.focus({ preventScroll: true });
   }
 
+  function getFocusableElements(container: HTMLElement): HTMLElement[] {
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(
+        [
+          "button:not([disabled])",
+          "a[href]",
+          "input:not([disabled])",
+          "select:not([disabled])",
+          "textarea:not([disabled])",
+          "[tabindex]:not([tabindex='-1'])",
+        ].join(", "),
+      ),
+    ).filter(
+      (element) =>
+        element.getAttribute("aria-hidden") !== "true" &&
+        element.getClientRects().length > 0,
+    );
+  }
+
+  function focusModalSurface(container: HTMLElement | null) {
+    if (!container) return;
+
+    const [firstFocusableElement] = getFocusableElements(container);
+    if (firstFocusableElement) {
+      firstFocusableElement.focus({ preventScroll: true });
+      return;
+    }
+
+    container.focus({ preventScroll: true });
+  }
+
+  function trapModalFocus(event: KeyboardEvent) {
+    if (event.key !== "Tab") return;
+
+    const container = event.currentTarget as HTMLElement | null;
+    if (!container) return;
+
+    const focusableElements = getFocusableElements(container);
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      container.focus({ preventScroll: true });
+      return;
+    }
+
+    const firstFocusableElement = focusableElements[0];
+    const lastFocusableElement =
+      focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement as HTMLElement | null;
+
+    if (event.shiftKey) {
+      if (
+        !activeElement ||
+        activeElement === firstFocusableElement ||
+        !container.contains(activeElement)
+      ) {
+        event.preventDefault();
+        lastFocusableElement.focus({ preventScroll: true });
+      }
+
+      return;
+    }
+
+    if (
+      !activeElement ||
+      activeElement === lastFocusableElement ||
+      !container.contains(activeElement)
+    ) {
+      event.preventDefault();
+      firstFocusableElement.focus({ preventScroll: true });
+    }
+  }
+
+  function getActiveModalElement(): HTMLElement | null {
+    if (isFilterDeleteConfirmOpen && filterDeleteConfirmModalElement) {
+      return filterDeleteConfirmModalElement;
+    }
+
+    if (isMusicFolderConfirmOpen && musicFolderConfirmModalElement) {
+      return musicFolderConfirmModalElement;
+    }
+
+    if (isSongFilterMenuOpen && songFilterModalElement) {
+      return songFilterModalElement;
+    }
+
+    if (isFilterLibraryMenuOpen && filterLibraryModalElement) {
+      return filterLibraryModalElement;
+    }
+
+    if (isSettingsOpen && settingsModalElement) {
+      return settingsModalElement;
+    }
+
+    return null;
+  }
+
+  function focusActiveSurface() {
+    const activeModalElement = getActiveModalElement();
+    if (activeModalElement) {
+      focusModalSurface(activeModalElement);
+      return;
+    }
+
+    focusAppShellForShortcuts();
+  }
+
+  async function focusModalAfterRender(container: HTMLElement | null) {
+    if (!container) return;
+
+    await tick();
+
+    if (getActiveModalElement() !== container) return;
+    focusModalSurface(container);
+  }
+
   $: if (hasLoadedSetupState && isInitialSetupRequired) {
-    isSettingsOpen = true;
-    activeSettingsSection = "general";
-    captureAction = null;
+    forceOpenGeneralSettings();
+  }
+
+  $: if (isSongFilterMenuOpen && songFilterModalElement) {
+    void focusModalAfterRender(songFilterModalElement);
+  }
+
+  $: if (isFilterLibraryMenuOpen && filterLibraryModalElement) {
+    void focusModalAfterRender(filterLibraryModalElement);
+  }
+
+  $: if (isMusicFolderConfirmOpen && musicFolderConfirmModalElement) {
+    void focusModalAfterRender(musicFolderConfirmModalElement);
+  }
+
+  $: if (isFilterDeleteConfirmOpen && filterDeleteConfirmModalElement) {
+    void focusModalAfterRender(filterDeleteConfirmModalElement);
+  }
+
+  $: if (isSettingsOpen && settingsModalElement) {
+    void focusModalAfterRender(settingsModalElement);
   }
 
   $: if (
@@ -1574,9 +2445,25 @@
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
+    let unlistenLibraryChanged: (() => void) | undefined;
     let unlistenFocusChanged: (() => void) | undefined;
+    let submenuResizeObserver: ResizeObserver | undefined;
+    const handleViewportResize = () => {
+      updateSubmenuModalMetrics();
+    };
 
     window.addEventListener("keydown", handleGlobalKeydown);
+    window.addEventListener("resize", handleViewportResize);
+    queueMicrotask(() => {
+      updateSubmenuModalMetrics();
+    });
+
+    if (typeof ResizeObserver !== "undefined" && songListElement) {
+      submenuResizeObserver = new ResizeObserver(() => {
+        updateSubmenuModalMetrics();
+      });
+      submenuResizeObserver.observe(songListElement);
+    }
 
     void (async () => {
       try {
@@ -1590,8 +2477,6 @@
           },
         );
 
-        await loadKeybinds();
-
         unlisten = await listen<TrackChangedPayload>(
           "track-changed",
           async (event) => {
@@ -1599,46 +2484,22 @@
           },
         );
 
-        const savedSearch = await invoke<string>("get_saved_search_blob");
-        searchQuery = savedSearch;
-        lastCommittedSearchQuery = normalizeSearchQuery(searchQuery);
-        lastDisplayedSearchQuery = lastCommittedSearchQuery;
+        unlistenLibraryChanged = await listen("library-changed", async () => {
+          await handleLibraryChange();
+        });
 
-        await refreshSetupState();
+        await refreshAppSettings();
 
         if (isInitialSetupRequired) {
-          isSettingsOpen = true;
-          activeSettingsSection = "general";
           songs = [];
           currentSong = null;
           searchResultCount = 0;
           hasInitialized = true;
+          forceOpenGeneralSettings();
           return;
         }
 
-        const count = await invoke<number>("load");
-        searchResultCount = count;
-
-        const savedVolume = await invoke<number>("get_volume");
-        const savedShuffle = await invoke<boolean>("get_random");
-        const savedRepeat = await invoke<boolean>("get_repeat");
-        const initialIndex = await invoke<number | null>("get_current_index");
-        const savedIsPlaying = await invoke<boolean>("get_play_pause");
-
-        volume = Math.round(savedVolume * 100);
-        previousVolume = volume > 0 ? volume : 50;
-        isMuted = volume === 0;
-
-        isShuffle = savedShuffle;
-        isRepeat = savedRepeat;
-        isPlaying = savedIsPlaying;
-
-        await refreshLoadedSongs();
-        await refreshAllFilters();
-        await refreshCurrentSong();
-        await refreshSavedSeek();
-        await handleTrackChange(initialIndex);
-        await syncPlaybackState();
+        await initializeLibraryAndPlayerState();
         focusAppShellForShortcuts();
 
         hasInitialized = true;
@@ -1649,11 +2510,14 @@
 
     return () => {
       window.removeEventListener("keydown", handleGlobalKeydown);
+      window.removeEventListener("resize", handleViewportResize);
+      submenuResizeObserver?.disconnect();
 
       if (volumeTimeout) clearTimeout(volumeTimeout);
       if (searchTimeout) clearTimeout(searchTimeout);
       if (playbackInterval) clearInterval(playbackInterval);
       if (unlisten) unlisten();
+      if (unlistenLibraryChanged) unlistenLibraryChanged();
       if (unlistenFocusChanged) unlistenFocusChanged();
     };
   });
@@ -1665,14 +2529,15 @@
     class:app-disabled={isSettingsOpen ||
       isSongFilterMenuOpen ||
       isFilterLibraryMenuOpen ||
-      isMusicFolderConfirmOpen}
+      isMusicFolderConfirmOpen ||
+      isFilterDeleteConfirmOpen}
   >
     <div class="main-panel">
       <div class="search-row">
         <div class="search-toolbar">
           <button
             class="settings-button"
-            on:click={openSettings}
+            on:click={openGeneralSettings}
             title="Settings"
             aria-label="Open settings"
           >
@@ -1707,7 +2572,7 @@
         </div>
       </div>
 
-      <div class="song-list">
+      <div class="song-list" bind:this={songListElement}>
         <div class="song-list-body">
           <div class="song-list-header">
             <div>#</div>
@@ -1726,6 +2591,9 @@
             <div
               bind:this={songRowElements[i]}
               class:selected={selectedSongId === songEntry.song.id}
+              class:playback-warning={playbackFailedSongIdSet.has(
+                songEntry.song.id,
+              )}
               class="song-row"
               role="button"
               tabindex="0"
@@ -1748,6 +2616,12 @@
                 {/if}
 
                 <div class="row-meta-under">
+                  {#if playbackFailedSongIdSet.has(songEntry.song.id)}
+                    <span class="song-warning-chip">
+                      Can't play with current decoder
+                    </span>
+                  {/if}
+
                   <button
                     class="song-inline-filter-button icon-only"
                     title="Manage filters for this song"
@@ -1927,6 +2801,7 @@
             bind:value={volume}
             on:input={changeVolume}
             on:wheel={handleVolumeWheel}
+            on:pointerup={handleSliderPointerUp}
             aria-label="Volume"
           />
 
@@ -1939,18 +2814,23 @@
   {#if isSongFilterMenuOpen && songFilterTargetSong}
     <div
       class="settings-overlay"
+      class:submenu-overlay-stretched={shouldStretchSubmenuModals}
+      style={`--submenu-top-inset: ${submenuTopInset}px; --submenu-bottom-inset: ${submenuBottomInset}px;`}
       role="presentation"
-      on:click={(event) => {
+      on:pointerdown={(event) => {
         if (event.target === event.currentTarget) {
           closeSongFilterMenu();
         }
       }}
     >
       <div
+        bind:this={songFilterModalElement}
         class="settings-modal filter-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="song-filter-title"
+        tabindex="-1"
+        on:keydown={trapModalFocus}
       >
         <div class="settings-header">
           <div class="settings-title-wrap">
@@ -1986,20 +2866,36 @@
             </div>
           </div>
 
-          <div class="filter-existing fixed-current-filters">
+          <div
+            class:filter-panel-active={songFilterActivePane === "current"}
+            class="filter-existing fixed-current-filters"
+          >
             <div class="filter-existing-label">Current filters</div>
 
             {#if songFilterTargetSong.filters.length > 0}
-              <div class="list-panel fixed-three-list">
+              <div class="list-panel fixed-three-list current-filter-list">
                 <div class="stacked-filter-list">
-                  {#each songFilterTargetSong.filters as filter (filter.id)}
-                    <div class="stacked-filter-row">
+                  {#each songFilterTargetSong.filters as filter, index (filter.id)}
+                    <div
+                      bind:this={songFilterCurrentRowElements[index]}
+                      class:filter-row-selected={songFilterActivePane ===
+                        "current" && songFilterCurrentSelectionIndex === index}
+                      class="stacked-filter-row"
+                      role="button"
+                      tabindex="-1"
+                      on:click={() => selectCurrentSongFilter(index)}
+                      on:keydown={(event) =>
+                        handleClickableRowKeydown(event, () =>
+                          selectCurrentSongFilter(index),
+                        )}
+                    >
                       <div class="stacked-filter-label">
                         <span class="song-tag">{filter.name}</span>
                       </div>
                       <button
                         class="current-filter-remove"
-                        on:click={() => removeFilterFromSong(filter)}
+                        on:click|stopPropagation={() =>
+                          removeFilterFromSong(filter)}
                         disabled={isRemovingSongFilter}
                         title={`Remove ${filter.name}`}
                         aria-label={`Remove ${filter.name}`}
@@ -2011,7 +2907,9 @@
                 </div>
               </div>
             {:else}
-              <div class="list-panel fixed-three-list empty-list-panel">
+              <div
+                class="list-panel fixed-three-list current-filter-list empty-list-panel"
+              >
                 <div class="filter-empty padded-empty">
                   No filters on this song yet.
                 </div>
@@ -2019,16 +2917,27 @@
             {/if}
           </div>
 
-          <div class="filter-existing grow-panel">
+          <div
+            class:filter-panel-active={songFilterActivePane === "available"}
+            class="filter-existing grow-panel"
+          >
             <div class="filter-existing-label">Available filters</div>
 
             {#if availableFiltersForSong(songFilterTargetSong).length > 0}
               <div class="list-panel fill-list-panel">
                 <div class="stacked-filter-list">
-                  {#each availableFiltersForSong(songFilterTargetSong) as filter (filter.id)}
+                  {#each availableFiltersForSong(songFilterTargetSong) as filter, index (filter.id)}
                     <button
+                      bind:this={songFilterAvailableRowElements[index]}
+                      class:filter-row-selected={songFilterActivePane ===
+                        "available" &&
+                        songFilterAvailableSelectionIndex === index}
                       class="available-filter-row"
-                      on:click={() => assignExistingFilterToSong(filter)}
+                      on:focus={() => selectAvailableSongFilter(index)}
+                      on:click={() => {
+                        selectAvailableSongFilter(index);
+                        void assignExistingFilterToSong(filter);
+                      }}
                       disabled={isAssigningSongFilter}
                     >
                       <span class="available-filter-name">{filter.name}</span>
@@ -2070,18 +2979,23 @@
   {#if isFilterLibraryMenuOpen}
     <div
       class="settings-overlay"
+      class:submenu-overlay-stretched={shouldStretchSubmenuModals}
+      style={`--submenu-top-inset: ${submenuTopInset}px; --submenu-bottom-inset: ${submenuBottomInset}px;`}
       role="presentation"
-      on:click={(event) => {
+      on:pointerdown={(event) => {
         if (event.target === event.currentTarget) {
           closeFilterLibraryMenu();
         }
       }}
     >
       <div
+        bind:this={filterLibraryModalElement}
         class="settings-modal filter-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="filter-library-title"
+        tabindex="-1"
+        on:keydown={trapModalFocus}
       >
         <div class="settings-header">
           <div class="settings-title-wrap">
@@ -2107,6 +3021,7 @@
         <div class="filter-modal-content library-filter-layout">
           <div class="filter-input-row">
             <input
+              bind:this={filterLibraryInput}
               type="text"
               bind:value={newFilterInput}
               placeholder="Type a filter name..."
@@ -2128,14 +3043,27 @@
             {#if allFilters.length > 0}
               <div class="list-panel fill-list-panel">
                 <div class="stacked-filter-list">
-                  {#each allFilters as filter (filter.id)}
-                    <div class="stacked-filter-row">
+                  {#each allFilters as filter, index (filter.id)}
+                    <div
+                      bind:this={filterLibraryRowElements[index]}
+                      class:filter-row-selected={filterLibrarySelectionIndex ===
+                        index}
+                      class="stacked-filter-row"
+                      role="button"
+                      tabindex="-1"
+                      on:click={() => selectLibraryFilter(index)}
+                      on:keydown={(event) =>
+                        handleClickableRowKeydown(event, () =>
+                          selectLibraryFilter(index),
+                        )}
+                    >
                       <div class="stacked-filter-label">
                         <span class="song-tag">{filter.name}</span>
                       </div>
                       <button
                         class="current-filter-remove danger-remove"
-                        on:click={() => removeGlobalFilter(filter)}
+                        on:click|stopPropagation={() =>
+                          requestGlobalFilterDeletion(filter)}
                         disabled={isRemovingGlobalFilter}
                         title={`Delete ${filter.name}`}
                         aria-label={`Delete ${filter.name}`}
@@ -2177,10 +3105,13 @@
   {#if isMusicFolderConfirmOpen && pendingMusicFolderPath}
     <div class="settings-overlay confirm-overlay" role="presentation">
       <div
+        bind:this={musicFolderConfirmModalElement}
         class="warning-dialog confirm-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="music-folder-confirm-title"
+        tabindex="-1"
+        on:keydown={trapModalFocus}
       >
         <div class="settings-header">
           <div class="settings-title-wrap">
@@ -2238,21 +3169,93 @@
     </div>
   {/if}
 
+  {#if isFilterDeleteConfirmOpen && pendingFilterDeletion}
+    <div class="settings-overlay confirm-overlay" role="presentation">
+      <div
+        bind:this={filterDeleteConfirmModalElement}
+        class="warning-dialog confirm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="filter-delete-confirm-title"
+        tabindex="-1"
+        on:keydown={trapModalFocus}
+      >
+        <div class="settings-header">
+          <div class="settings-title-wrap">
+            <div class="settings-icon warning-icon">
+              <Tags size={18} />
+            </div>
+            <div>
+              <h2 id="filter-delete-confirm-title">Delete filter?</h2>
+              <p>
+                This removes the filter from the library and detaches it from
+                every song that currently uses it.
+              </p>
+            </div>
+          </div>
+
+          <button
+            class="settings-close"
+            on:click={closeFilterDeleteConfirm}
+            title="Cancel"
+            aria-label="Cancel filter deletion"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div class="settings-list">
+          <div class="settings-card warning-card">
+            <div class="settings-card-title">Selected filter</div>
+            <div class="settings-card-text">{pendingFilterDeletion.name}</div>
+            <div class="settings-card-text">
+              This action can't be undone. Songs will keep playing, but this
+              saved filter and its song associations will be removed.
+            </div>
+          </div>
+        </div>
+
+        <div class="warning-footer">
+          <button
+            class="footer-button secondary-button"
+            on:click={closeFilterDeleteConfirm}
+            type="button"
+          >
+            Cancel
+          </button>
+
+          <button
+            class="footer-button danger-button"
+            on:click={confirmGlobalFilterDeletion}
+            type="button"
+          >
+            Delete filter
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if isSettingsOpen}
     <div
       class="settings-overlay"
+      class:submenu-overlay-stretched={shouldStretchSettingsModal}
+      style={`--submenu-top-inset: ${submenuTopInset}px; --submenu-bottom-inset: ${submenuBottomInset}px;`}
       role="presentation"
-      on:click={(event) => {
+      on:pointerdown={(event) => {
         if (event.target === event.currentTarget && canCloseInitialSettings()) {
           closeSettings();
         }
       }}
     >
       <div
+        bind:this={settingsModalElement}
         class="settings-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
+        tabindex="-1"
+        on:keydown={trapModalFocus}
       >
         <div class="settings-header">
           <div class="settings-title-wrap">
@@ -2375,6 +3378,23 @@
                   {isSavingSongListLimit ? "Saving..." : "Save limit"}
                 </button>
               </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-title">Startup playback</div>
+              <div class="settings-card-text">
+                When enabled, the app always starts paused. When disabled, it
+                keeps using the saved play/pause state from the database.
+              </div>
+
+              <label class="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={alwaysStartPaused}
+                  on:change={toggleAlwaysStartPaused}
+                />
+                <span>Always start paused</span>
+              </label>
             </div>
           </div>
         {:else if activeSettingsSection === "keybinds"}
@@ -2673,8 +3693,20 @@
     background: #242424;
   }
 
+  .song-row.playback-warning {
+    background: #433114;
+  }
+
+  .song-row.playback-warning:hover {
+    background: #513c18;
+  }
+
   .song-row.selected {
     background: #1f3a2a;
+  }
+
+  .song-row.selected.playback-warning {
+    background: #5d461a;
   }
 
   .song-row:focus-visible {
@@ -2718,6 +3750,21 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .song-warning-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: #6a4b10;
+    border: 1px solid #8d6720;
+    color: #fff0c2;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
   }
 
   .row-meta-under {
@@ -3017,6 +4064,12 @@
     z-index: 30;
   }
 
+  .settings-overlay.submenu-overlay-stretched {
+    align-items: stretch;
+    padding-top: var(--submenu-top-inset, 1rem);
+    padding-bottom: var(--submenu-bottom-inset, 1rem);
+  }
+
   .settings-modal {
     width: min(720px, 100%);
     height: min(880px, calc(100dvh - 2rem));
@@ -3038,6 +4091,19 @@
     max-height: min(720px, calc(100dvh - 2rem));
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .settings-overlay.submenu-overlay-stretched .filter-modal {
+    height: 100%;
+    max-height: 100%;
+    align-self: stretch;
+  }
+
+  .settings-overlay.submenu-overlay-stretched
+    .settings-modal:not(.filter-modal) {
+    height: 100%;
+    max-height: 100%;
+    align-self: stretch;
   }
 
   .warning-dialog .settings-list {
@@ -3151,6 +4217,18 @@
     border-color: #484848;
   }
 
+  .settings-button:focus-visible,
+  .settings-close:focus-visible,
+  .settings-section-button:focus-visible,
+  .keybind-button:focus-visible,
+  .footer-button:focus-visible,
+  .secondary-button:focus-visible,
+  .available-filter-row:focus-visible,
+  .current-filter-remove:focus-visible {
+    border-color: #5a9cff;
+    box-shadow: 0 0 0 3px rgba(90, 156, 255, 0.26);
+  }
+
   .settings-sections {
     display: flex;
     gap: 0.55rem;
@@ -3249,6 +4327,60 @@
   .settings-input:focus {
     outline: none;
     border-color: #4f8b61;
+    box-shadow: 0 0 0 3px rgba(79, 139, 97, 0.18);
+  }
+
+  .settings-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: #e7e7e7;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .settings-checkbox input {
+    width: 1.1rem;
+    height: 1.1rem;
+    margin: 0;
+    flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    display: grid;
+    place-content: center;
+    border: 1px solid #3e3e3e;
+    border-radius: 0.3rem;
+    background: #131313;
+    cursor: pointer;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .settings-checkbox input::before {
+    content: "";
+    width: 0.32rem;
+    height: 0.58rem;
+    border-right: 0.15rem solid #f5f5f5;
+    border-bottom: 0.15rem solid #f5f5f5;
+    transform: translateY(-0.03rem) rotate(45deg) scale(0);
+    transform-origin: center;
+    transition: transform 120ms ease;
+  }
+
+  .settings-checkbox input:checked {
+    background: #4f8b61;
+    border-color: #4f8b61;
+  }
+
+  .settings-checkbox input:checked::before {
+    transform: translateY(-0.03rem) rotate(45deg) scale(1);
+  }
+
+  .settings-checkbox input:focus-visible {
+    outline: none;
+    border-color: #6da67e;
     box-shadow: 0 0 0 3px rgba(79, 139, 97, 0.18);
   }
 
@@ -3451,6 +4583,11 @@
     overflow: hidden;
   }
 
+  .filter-existing.filter-panel-active {
+    border-color: #2c6b45;
+    box-shadow: inset 0 0 0 1px rgba(44, 107, 69, 0.4);
+  }
+
   .grow-panel {
     min-height: 0;
   }
@@ -3497,6 +4634,13 @@
     scrollbar-gutter: stable;
   }
 
+  .settings-overlay.submenu-overlay-stretched
+    .song-filter-layout
+    .current-filter-list {
+    height: 193px;
+    max-height: 193px;
+  }
+
   .empty-list-panel {
     display: block;
   }
@@ -3523,6 +4667,16 @@
     padding: 0.65rem 0.85rem;
     box-sizing: border-box;
     background: transparent;
+    cursor: pointer;
+    transition: background 0.18s ease;
+  }
+
+  .stacked-filter-row:hover {
+    background: #242424;
+  }
+
+  .stacked-filter-row:focus-visible {
+    box-shadow: inset 0 0 0 2px #5a9cff;
   }
 
   .stacked-filter-label {
@@ -3570,6 +4724,15 @@
   .available-filter-row:disabled {
     opacity: 0.65;
     cursor: not-allowed;
+  }
+
+  .stacked-filter-row.filter-row-selected,
+  .available-filter-row.filter-row-selected {
+    background: #1f3a2a;
+  }
+
+  .available-filter-row.filter-row-selected:hover {
+    background: #25533a;
   }
 
   .available-filter-name {

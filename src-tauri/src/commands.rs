@@ -1,8 +1,15 @@
+use std::time::Instant;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    errors::AppResult, filter::Filter, song_filter::SongFilter, song_query::SongWithFilters,
+    errors::AppResult,
+    filter::Filter,
+    manager::{PlayerLoadState, SongListChange},
+    setting::AppSettingsSnapshot,
+    song_filter::SongFilter,
+    song_query::SongWithFilters,
     AppState,
 };
 
@@ -10,6 +17,12 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 struct TrackChangedPayload {
     current_index: Option<usize>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackCommandResult {
+    failed_song_ids: Vec<i32>,
 }
 
 fn emit_track_changed(app: &AppHandle, current_index: Option<usize>) -> anyhow::Result<()> {
@@ -49,19 +62,60 @@ keybind_commands!(
     (get_next_keybind, set_next_keybind),
     (get_previous_keybind, set_previous_keybind),
     (get_play_pause_keybind, set_play_pause_keybind),
+    (get_increase_volume_keybind, set_increase_volume_keybind),
+    (get_decrease_volume_keybind, set_decrease_volume_keybind),
+    (get_seek_forward_keybind, set_seek_forward_keybind),
+    (get_seek_backward_keybind, set_seek_backward_keybind),
+    (get_filter_menu_keybind, set_filter_menu_keybind),
+    (get_song_filter_menu_keybind, set_song_filter_menu_keybind),
+    (get_keybind_settings_keybind, set_keybind_settings_keybind),
+    (
+        get_switch_song_filter_pane_keybind,
+        set_switch_song_filter_pane_keybind
+    ),
+    (
+        get_apply_selected_filter_keybind,
+        set_apply_selected_filter_keybind
+    ),
 );
 
 #[tauri::command]
 pub async fn process_music_folder(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let start = Instant::now();
     state.zmp.process_music_folder().await?;
+    let elapsed = start.elapsed();
+
+    log::info!("process_music_folder took {:?}", elapsed);
+
+    state.watcher.mark_loaded_saved_state_without_sync();
+    state.watcher.refresh_watch_config();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn load(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> AppResult<usize> {
+pub async fn load(state: tauri::State<'_, AppState>) -> AppResult<PlayerLoadState> {
+    let start = Instant::now();
     let result = state.zmp.load().await?;
-    emit_track_changed(&app, result.current_index)?;
-    Ok(result.count)
+    let elapsed = start.elapsed();
+
+    log::info!("loading took {:?}", elapsed);
+
+    state.watcher.mark_loaded_saved_state();
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_app_settings_snapshot(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<AppSettingsSnapshot> {
+    Ok(state.zmp.get_app_settings_snapshot().await?)
+}
+
+#[tauri::command]
+pub async fn reload_song_list_after_library_change(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<SongListChange> {
+    Ok(state.zmp.reload_song_list_after_library_change().await?)
 }
 
 #[tauri::command]
@@ -89,6 +143,7 @@ pub async fn set_processed_music_folder(
     flag: bool,
 ) -> AppResult<()> {
     state.zmp.set_processed_music_folder(flag).await?;
+    state.watcher.refresh_watch_config();
     Ok(())
 }
 
@@ -137,10 +192,14 @@ pub async fn play_song_at(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     index: usize,
-) -> AppResult<()> {
+) -> AppResult<PlaybackCommandResult> {
     let result = state.zmp.play_song_at(index).await?;
-    emit_track_changed(&app, result.current_index)?;
-    Ok(())
+    if result.should_emit_track_changed {
+        emit_track_changed(&app, result.current_index)?;
+    }
+    Ok(PlaybackCommandResult {
+        failed_song_ids: result.failed_song_ids,
+    })
 }
 
 #[tauri::command]
@@ -163,20 +222,31 @@ pub async fn preview_search_songs(
 }
 
 #[tauri::command]
-pub async fn next_song(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> AppResult<()> {
+pub async fn next_song(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<PlaybackCommandResult> {
     let result = state.zmp.next_song().await?;
-    emit_track_changed(&app, result.current_index)?;
-    Ok(())
+    if result.should_emit_track_changed {
+        emit_track_changed(&app, result.current_index)?;
+    }
+    Ok(PlaybackCommandResult {
+        failed_song_ids: result.failed_song_ids,
+    })
 }
 
 #[tauri::command]
 pub async fn previous_song(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> AppResult<()> {
+) -> AppResult<PlaybackCommandResult> {
     let result = state.zmp.previous_song().await?;
-    emit_track_changed(&app, result.current_index)?;
-    Ok(())
+    if result.should_emit_track_changed {
+        emit_track_changed(&app, result.current_index)?;
+    }
+    Ok(PlaybackCommandResult {
+        failed_song_ids: result.failed_song_ids,
+    })
 }
 
 #[tauri::command]
@@ -188,9 +258,8 @@ pub async fn get_current_song_seek(state: tauri::State<'_, AppState>) -> AppResu
 pub async fn save_current_song_seek(
     state: tauri::State<'_, AppState>,
     seek_value: usize,
-) -> AppResult<()> {
-    state.zmp.save_current_song_seek(seek_value).await?;
-    Ok(())
+) -> AppResult<usize> {
+    Ok(state.zmp.save_current_song_seek(seek_value).await?)
 }
 
 #[tauri::command]
@@ -199,6 +268,30 @@ pub async fn set_current_song_seek(
     seek_value: usize,
 ) -> AppResult<()> {
     state.zmp.set_current_song_seek(seek_value).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn increase_current_song_seek_by_seconds(
+    state: tauri::State<'_, AppState>,
+    seek_value: u64,
+) -> AppResult<()> {
+    state
+        .zmp
+        .increase_current_song_seek_by_seconds(seek_value)
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn decrease_current_song_seek_by_seconds(
+    state: tauri::State<'_, AppState>,
+    seek_value: u64,
+) -> AppResult<()> {
+    state
+        .zmp
+        .decrease_current_song_seek_by_seconds(seek_value)
+        .await?;
     Ok(())
 }
 
@@ -214,6 +307,20 @@ pub async fn set_play_pause(state: tauri::State<'_, AppState>, is_playing: bool)
 }
 
 #[tauri::command]
+pub async fn get_always_start_paused(state: tauri::State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.zmp.get_always_start_paused().await)
+}
+
+#[tauri::command]
+pub async fn set_always_start_paused(
+    state: tauri::State<'_, AppState>,
+    flag: bool,
+) -> AppResult<()> {
+    state.zmp.set_always_start_paused(flag).await?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_volume(state: tauri::State<'_, AppState>) -> AppResult<rodio::Float> {
     Ok(state.zmp.get_volume().await)
 }
@@ -221,6 +328,24 @@ pub async fn get_volume(state: tauri::State<'_, AppState>) -> AppResult<rodio::F
 #[tauri::command]
 pub async fn set_volume(state: tauri::State<'_, AppState>, volume: rodio::Float) -> AppResult<()> {
     state.zmp.set_volume(volume).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn increase_volume_by(
+    state: tauri::State<'_, AppState>,
+    volume: rodio::Float,
+) -> AppResult<()> {
+    state.zmp.increase_volume_by(volume).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn decrease_volume_by(
+    state: tauri::State<'_, AppState>,
+    volume: rodio::Float,
+) -> AppResult<()> {
+    state.zmp.decrease_volume_by(volume).await?;
     Ok(())
 }
 

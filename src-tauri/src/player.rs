@@ -4,7 +4,7 @@ use anyhow::Context;
 use rand::RngExt;
 use rodio::Decoder;
 
-use crate::song_query::SongWithFilters;
+use crate::{setting::DEFAULT_VOLUME, song_query::SongWithFilters};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueueSyncResult {
@@ -32,35 +32,42 @@ pub struct Player {
     volume: rodio::Float,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaybackAttempt {
+    pub failed_song_ids: Vec<i32>,
+    pub should_emit_track_changed: bool,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Player {
-    pub fn current_index(&self) -> Option<usize> {
-        self.current_index
-    }
-
-    pub fn queue(&self) -> &[SongWithFilters] {
-        &self.queue
-    }
-
-    pub fn new(
-        current_index: Option<usize>,
-        shuffle: bool,
-        repeat: bool,
-        volume: rodio::Float,
-    ) -> Self {
+    pub fn new() -> Self {
         let stream_handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
         let player = rodio::Player::connect_new(stream_handle.mixer());
-        player.set_volume(volume);
+        player.set_volume(DEFAULT_VOLUME);
 
         Self {
             //stream handle is kept so it doesn't get dropped, as the mixer is needed for the player
             _stream_handle: stream_handle,
             player,
             queue: Vec::new(),
-            current_index,
-            repeat,
-            shuffle,
-            volume,
+            current_index: None,
+            repeat: false,
+            shuffle: false,
+            volume: DEFAULT_VOLUME,
         }
+    }
+
+    pub fn current_index(&self) -> Option<usize> {
+        self.current_index
+    }
+
+    pub fn queue(&self) -> &[SongWithFilters] {
+        &self.queue
     }
 
     pub fn load_saved_state(
@@ -71,21 +78,31 @@ impl Player {
         saved_seek: usize,
         saved_play_pause_flag: bool,
         songs: Vec<SongWithFilters>,
-    ) -> anyhow::Result<Option<usize>> {
+    ) -> anyhow::Result<PlaybackAttempt> {
         self.set_shuffle(is_shuffle);
         self.set_repeat(is_repeat);
         let _ = self.set_queue(songs)?;
 
         if !self.queue.is_empty() {
             let index = saved_index.min(self.queue.len() - 1);
-            self.play_song_at(index, saved_play_pause_flag, false)?;
+            let playback = self.play_song_at(index, saved_play_pause_flag, false)?;
 
-            if saved_seek > 0 {
-                self.seek_to_seconds(saved_seek as u64)?;
+            if playback.failed_song_ids.is_empty() && saved_seek > 0 {
+                if let Err(err) = self.seek_to_seconds(saved_seek as u64) {
+                    log::error!("Failed to restore saved seek position: {err}");
+                }
             }
+
+            return Ok(playback);
         }
 
-        Ok(self.current_index())
+        Ok(PlaybackAttempt {
+            failed_song_ids: Vec::new(),
+            should_emit_track_changed: false,
+        })
+    }
+    pub fn seek_pos(&self) -> Duration {
+        self.player.get_pos()
     }
 
     pub fn seek_to_seconds(&mut self, seconds: u64) -> anyhow::Result<()> {
@@ -106,24 +123,58 @@ impl Player {
         Ok(source)
     }
 
-    fn append_song(&self, song: &SongWithFilters) -> anyhow::Result<()> {
-        let source = Self::source_from_song(song)?;
+    fn apply_loaded_source(
+        &mut self,
+        index: usize,
+        source: Decoder<BufReader<File>>,
+        start_playing: bool,
+    ) {
+        self.current_index = Some(index);
+        self.player.clear();
         self.player.append(source);
-        Ok(())
+
+        if start_playing {
+            self.player.play();
+        } else {
+            self.player.pause();
+        }
     }
 
-    fn load_current_track(&self, start_playing: bool) -> anyhow::Result<()> {
-        self.player.clear();
+    fn try_play_candidates<I>(
+        &mut self,
+        candidate_indexes: I,
+        start_playing: bool,
+    ) -> anyhow::Result<PlaybackAttempt>
+    where
+        I: IntoIterator<Item = usize>,
+    {
+        let mut skipped_song_ids = Vec::new();
 
-        if let Some(index) = self.current_index {
-            let song = &self.queue[index];
-            self.append_song(song)?;
-            if start_playing {
-                self.player.play();
+        for index in candidate_indexes {
+            let Some(song) = self.queue.get(index) else {
+                continue;
+            };
+
+            match Self::source_from_song(song) {
+                Ok(source) => {
+                    self.apply_loaded_source(index, source, start_playing);
+
+                    return Ok(PlaybackAttempt {
+                        failed_song_ids: skipped_song_ids,
+                        should_emit_track_changed: true,
+                    });
+                }
+                Err(err) => {
+                    log::warn!("Failed to load track {}: {err}", song.song.file_path);
+                    skipped_song_ids.push(song.song.id);
+                }
             }
         }
 
-        Ok(())
+        Ok(PlaybackAttempt {
+            failed_song_ids: skipped_song_ids,
+            should_emit_track_changed: false,
+        })
     }
 
     pub fn set_queue(&mut self, songs: Vec<SongWithFilters>) -> anyhow::Result<QueueSyncResult> {
@@ -161,17 +212,22 @@ impl Player {
         index: usize,
         start_playing: bool,
         ignore_if_same: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<PlaybackAttempt> {
         if index >= self.queue.len() {
-            return Ok(());
+            return Ok(PlaybackAttempt {
+                failed_song_ids: Vec::new(),
+                should_emit_track_changed: false,
+            });
         }
 
         if ignore_if_same && self.current_index == Some(index) {
-            return Ok(());
+            return Ok(PlaybackAttempt {
+                failed_song_ids: Vec::new(),
+                should_emit_track_changed: false,
+            });
         }
 
-        self.current_index = Some(index);
-        self.load_current_track(start_playing)
+        self.try_play_candidates([index], start_playing)
     }
 
     pub fn play_pause(&self, should_play: bool) {
@@ -182,60 +238,89 @@ impl Player {
         }
     }
 
-    pub fn next_song(&mut self) -> anyhow::Result<()> {
+    pub fn next_song(&mut self) -> anyhow::Result<PlaybackAttempt> {
         if self.queue.is_empty() {
-            return Ok(());
+            return Ok(PlaybackAttempt {
+                failed_song_ids: Vec::new(),
+                should_emit_track_changed: false,
+            });
         }
 
         if self.repeat {
-            return self.load_current_track(true);
+            if let Some(current_index) = self.current_index {
+                return self.try_play_candidates([current_index], true);
+            }
+
+            return Ok(PlaybackAttempt {
+                failed_song_ids: Vec::new(),
+                should_emit_track_changed: false,
+            });
         }
 
         let len = self.queue.len();
 
-        let next_index = match self.current_index {
-            None => 0,
+        let candidates = match self.current_index {
+            None => (0..len).collect::<Vec<_>>(),
             Some(current) if self.shuffle && len > 1 => {
+                let mut candidates = (0..len)
+                    .filter(|index| *index != current)
+                    .collect::<Vec<_>>();
                 let mut rng = rand::rng();
-                let r = rng.random_range(0..len - 1);
-                if r >= current {
-                    r + 1
-                } else {
-                    r
+
+                for i in (1..candidates.len()).rev() {
+                    let j = rng.random_range(0..=i);
+                    candidates.swap(i, j);
                 }
+
+                candidates
             }
-            Some(current) => (current + 1) % len,
+            Some(current) if len == 1 => vec![current],
+            Some(current) => (1..len)
+                .map(|offset| (current + offset) % len)
+                .collect::<Vec<_>>(),
         };
 
-        self.current_index = Some(next_index);
-        self.load_current_track(true)
+        self.try_play_candidates(candidates, true)
     }
 
-    pub fn previous(&mut self) -> anyhow::Result<()> {
+    pub fn previous_song(&mut self) -> anyhow::Result<PlaybackAttempt> {
         if self.queue.is_empty() {
-            return Ok(());
+            return Ok(PlaybackAttempt {
+                failed_song_ids: Vec::new(),
+                should_emit_track_changed: false,
+            });
         }
 
         //if repeat is enabled, previous just needs to "restart" the song
         //seeking to the beginning allows that functionality without
         //having to reload the same track
         if self.repeat {
-            return self.seek_to_seconds(0);
+            self.seek_to_seconds(0)?;
+            return Ok(PlaybackAttempt {
+                failed_song_ids: Vec::new(),
+                should_emit_track_changed: true,
+            });
         }
 
-        let prev_index = match self.current_index {
-            None => 0,
-            Some(0) => self.queue.len() - 1,
-            Some(current) => current - 1,
+        let len = self.queue.len();
+        let candidates = match self.current_index {
+            None => (0..len).collect::<Vec<_>>(),
+            Some(current) if len == 1 => vec![current],
+            Some(current) => (1..len)
+                .map(|offset| (current + len - (offset % len)) % len)
+                .collect::<Vec<_>>(),
         };
 
-        self.current_index = Some(prev_index);
-        self.load_current_track(true)
+        self.try_play_candidates(candidates, true)
     }
 
     pub fn set_volume(&mut self, volume: rodio::Float) {
         self.volume = volume.clamp(0.0, 1.0);
         self.player.set_volume(self.volume);
+    }
+
+    pub fn get_volume(&self) -> rodio::Float {
+        self.player.volume()
     }
 
     pub fn set_repeat(&mut self, flag: bool) {
@@ -263,6 +348,13 @@ impl Player {
     }
 }
 
+//TODO (zor): add actual integration tests, to test if the player wrapper behaves as expected
+//test all the below with an intended supported file (currently only have metadata tests with a fake wav file)
+//test skipping failed decodes
+//test next and previous song on loop
+//test if the current_index and queue are the expected value
+//test if player starts properly defautled and when loaded with state
+//...
 #[cfg(test)]
 mod tests {
     use crate::{song::Song, song_query::SongWithFilters};
@@ -282,6 +374,8 @@ mod tests {
                 file_path: format!("/music/{id}.mp3"),
                 duration: 180,
                 extension: "mp3".to_string(),
+                file_size: 4_096,
+                file_modified_millis: 1_700_000_000_000,
             },
             filters: Vec::new(),
         }

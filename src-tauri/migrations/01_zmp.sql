@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS song (
     file_path    TEXT,
     extension    TEXT,
     duration     INTEGER,
+    file_size    INTEGER NOT NULL,
+    file_modified_millis INTEGER NOT NULL,
     UNIQUE(file_path)
 );
 

@@ -49,6 +49,21 @@ async fn integration_random_play_roundtrip() {
 }
 
 #[tokio::test]
+async fn integration_always_start_paused_roundtrip() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    assert!(!service.should_always_start_paused(&pool).await);
+
+    service.set_always_start_paused(&pool, true).await.unwrap();
+    assert!(service.should_always_start_paused(&pool).await);
+
+    service.set_always_start_paused(&pool, false).await.unwrap();
+    assert!(!service.should_always_start_paused(&pool).await);
+}
+
+#[tokio::test]
 async fn integration_processed_music_folder_roundtrip() {
     let pool = setup_db().await;
     let sqlite = SqliteImpl {};
@@ -218,7 +233,19 @@ async fn integration_keybind_roundtrips() {
     service.set_next_keybind(&pool, "Ctrl+Right").await.unwrap();
     service.set_shuffle_keybind(&pool, "Ctrl+R").await.unwrap();
     service
+        .set_keybind_settings_keybind(&pool, "Ctrl+Shift+K")
+        .await
+        .unwrap();
+    service
         .set_saved_search_blob(&pool, "aphex twin")
+        .await
+        .unwrap();
+    service
+        .set_switch_song_filter_pane_keybind(&pool, "Tab")
+        .await
+        .unwrap();
+    service
+        .set_apply_selected_filter_keybind(&pool, "Enter")
         .await
         .unwrap();
 
@@ -234,9 +261,76 @@ async fn integration_keybind_roundtrips() {
     assert_eq!(service.get_next_keybind(&pool).await.unwrap(), "Ctrl+Right");
     assert_eq!(service.get_shuffle_keybind(&pool).await.unwrap(), "Ctrl+R");
     assert_eq!(
+        service.get_keybind_settings_keybind(&pool).await.unwrap(),
+        "Ctrl+Shift+K"
+    );
+    assert_eq!(
+        service
+            .get_switch_song_filter_pane_keybind(&pool)
+            .await
+            .unwrap(),
+        "Tab"
+    );
+    assert_eq!(
+        service
+            .get_apply_selected_filter_keybind(&pool)
+            .await
+            .unwrap(),
+        "Enter"
+    );
+    assert_eq!(
         service.get_saved_search_blob(&pool).await.unwrap(),
         "aphex twin"
     );
+}
+
+#[tokio::test]
+async fn integration_app_settings_snapshot_batches_saved_values() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    service
+        .set_music_folder_path(&pool, "/music/library")
+        .await
+        .unwrap();
+    service
+        .set_processed_music_folder(&pool, true)
+        .await
+        .unwrap();
+    service
+        .set_saved_search_blob(&pool, "burial")
+        .await
+        .unwrap();
+    service.set_song_list_limit(&pool, 2500).await.unwrap();
+    service.set_always_start_paused(&pool, true).await.unwrap();
+    service
+        .set_play_pause_keybind(&pool, "Space")
+        .await
+        .unwrap();
+    service.set_filter_menu_keybind(&pool, "F").await.unwrap();
+
+    let snapshot = service.get_app_settings_snapshot(&pool).await.unwrap();
+
+    assert_eq!(snapshot.music_folder_path, "/music/library");
+    assert!(snapshot.has_processed_music_folder);
+    assert_eq!(snapshot.saved_search_blob, "burial");
+    assert_eq!(snapshot.song_list_limit, 2500);
+    assert!(snapshot.always_start_paused);
+    assert_eq!(snapshot.keybinds.play_pause, "Space");
+    assert_eq!(snapshot.keybinds.toggle_filter_menu, "F");
+}
+
+#[tokio::test]
+async fn integration_music_folder_sync_settings_batch_defaults_when_missing() {
+    let pool = setup_db().await;
+    let sqlite = SqliteImpl {};
+    let service = SettingService::new(sqlite);
+
+    let snapshot = service.get_music_folder_sync_settings(&pool).await.unwrap();
+
+    assert_eq!(snapshot.music_folder_path, "");
+    assert!(!snapshot.has_processed_music_folder);
 }
 
 #[tokio::test]
