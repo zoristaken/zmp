@@ -18,6 +18,7 @@ use lofty::mp4::{Atom, AtomData, AtomIdent, Ilst, Mp4File};
 use lofty::mpeg::MpegFile;
 use lofty::ogg::{OpusFile, SpeexFile, VorbisFile};
 use lofty::tag::{ItemValue, TagType};
+use lofty::wavpack::WavPackFile;
 use lofty::{ape::ApeFile, flac::FlacFile};
 
 use lofty::{
@@ -248,7 +249,9 @@ impl MetadataParser {
                 self.write_speex_filters(file_path, FILTER_TAG_KEY, &filters_string)?
             }
             FileType::Mp4 => self.write_mp4_filters(file_path, FILTER_TAG_KEY, &filters_string)?,
-            FileType::Ape => self.write_ape_filters(file_path, FILTER_TAG_KEY, &filters_string)?,
+            FileType::Ape | FileType::WavPack => {
+                self.write_ape_filters(file_path, FILTER_TAG_KEY, &filters_string)?
+            }
             _ => {
                 return Err(anyhow::anyhow!(
                     "Custom metadata is not supported for {:?} files",
@@ -272,7 +275,9 @@ impl MetadataParser {
             FileType::Opus => self.read_opus_filters(file_path, FILTER_TAG_KEY)?,
             FileType::Speex => self.read_speex_filters(file_path, FILTER_TAG_KEY)?,
             FileType::Mp4 => self.read_mp4_filters(file_path, FILTER_TAG_KEY)?,
-            FileType::Ape => self.read_ape_filters(file_path, FILTER_TAG_KEY)?,
+            FileType::Ape | FileType::WavPack => {
+                self.read_ape_filters(file_path, FILTER_TAG_KEY)?
+            }
             _ => return Ok(vec![]),
         };
 
@@ -408,19 +413,42 @@ impl MetadataParser {
     }
 
     fn write_ape_filters(&self, file_path: &Path, key: &str, value: &str) -> anyhow::Result<()> {
-        let mut reader = File::open(file_path)?;
-        let mut file = ApeFile::read_from(&mut reader, ParseOptions::new())?;
-        let mut tag = file.ape_mut().map(std::mem::take).unwrap_or_default();
-        tag.remove(key);
-        if !value.is_empty() {
-            tag.insert(lofty::ape::ApeItem::new(
-                key.to_string(),
-                ItemValue::Text(value.to_string()),
-            )?);
+        match self.detect_file_type(file_path)? {
+            FileType::Ape => {
+                let mut reader = File::open(file_path)?;
+                let mut file = ApeFile::read_from(&mut reader, ParseOptions::new())?;
+                let mut tag = file.ape_mut().map(std::mem::take).unwrap_or_default();
+                tag.remove(key);
+                if !value.is_empty() {
+                    tag.insert(lofty::ape::ApeItem::new(
+                        key.to_string(),
+                        ItemValue::Text(value.to_string()),
+                    )?);
+                }
+                file.set_ape(tag);
+                file.save_to_path(file_path, WriteOptions::default())?;
+                Ok(())
+            }
+            FileType::WavPack => {
+                let mut reader = File::open(file_path)?;
+                let mut file = WavPackFile::read_from(&mut reader, ParseOptions::new())?;
+                let mut tag = file.ape_mut().map(std::mem::take).unwrap_or_default();
+                tag.remove(key);
+                if !value.is_empty() {
+                    tag.insert(lofty::ape::ApeItem::new(
+                        key.to_string(),
+                        ItemValue::Text(value.to_string()),
+                    )?);
+                }
+                file.set_ape(tag);
+                file.save_to_path(file_path, WriteOptions::default())?;
+                Ok(())
+            }
+            file_type => Err(anyhow::anyhow!(
+                "Expected an APE-backed file, got {:?}",
+                file_type
+            )),
         }
-        file.set_ape(tag);
-        file.save_to_path(file_path, WriteOptions::default())?;
-        Ok(())
     }
 
     fn read_id3_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
@@ -502,13 +530,30 @@ impl MetadataParser {
     }
 
     fn read_ape_filters(&self, file_path: &Path, key: &str) -> anyhow::Result<Option<String>> {
-        let mut reader = File::open(file_path)?;
-        let file = ApeFile::read_from(&mut reader, ParseOptions::new())?;
-        Ok(file
-            .ape()
-            .and_then(|tag| tag.get(key))
-            .and_then(|item| item.value().text())
-            .map(str::to_string))
+        match self.detect_file_type(file_path)? {
+            FileType::Ape => {
+                let mut reader = File::open(file_path)?;
+                let file = ApeFile::read_from(&mut reader, ParseOptions::new())?;
+                Ok(file
+                    .ape()
+                    .and_then(|tag| tag.get(key))
+                    .and_then(|item| item.value().text())
+                    .map(str::to_string))
+            }
+            FileType::WavPack => {
+                let mut reader = File::open(file_path)?;
+                let file = WavPackFile::read_from(&mut reader, ParseOptions::new())?;
+                Ok(file
+                    .ape()
+                    .and_then(|tag| tag.get(key))
+                    .and_then(|item| item.value().text())
+                    .map(str::to_string))
+            }
+            file_type => Err(anyhow::anyhow!(
+                "Expected an APE-backed file, got {:?}",
+                file_type
+            )),
+        }
     }
 
     fn upsert_id3_filters_tag(&self, tag: &mut Id3v2Tag, key: &str, value: &str) {

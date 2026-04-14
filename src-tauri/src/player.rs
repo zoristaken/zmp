@@ -89,7 +89,7 @@ impl Player {
 
             if playback.failed_song_ids.is_empty() && saved_seek > 0 {
                 if let Err(err) = self.seek_to_seconds(saved_seek as u64) {
-                    log::error!("Failed to restore saved seek position: {err}");
+                    log::warn!("Failed to restore saved seek position: {err}");
                 }
             }
 

@@ -14,6 +14,7 @@ use crate::{
     setting::{AppSettingsSnapshot, SettingRepository, SettingService},
     song::{Song, SongRepository, SongService},
     song_filter::{SongFilter, SongFilterRepository, SongFilterService},
+    song_metadata_filter_sync::SongMetadataFilterSyncService,
     song_mutation::{SongMutationRepository, SongMutationService},
     song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
 };
@@ -75,6 +76,7 @@ where
     pub song_mutation: SongMutationService<R, DB>,
     pub song_filter: SongFilterService<R, DB>,
     pub filter: FilterService<R, DB>,
+    song_metadata_filter_sync: SongMetadataFilterSyncService<R, DB>,
     pub metadata_parser: MetadataParser,
     pub player: Mutex<Player>,
     preview_search: Mutex<Option<PreviewSearch>>,
@@ -114,6 +116,7 @@ where
             song_mutation: SongMutationService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             filter: FilterService::new(repos.clone()),
+            song_metadata_filter_sync: SongMetadataFilterSyncService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Mutex::new(Player::new()),
             preview_search: Mutex::new(None),
@@ -200,8 +203,8 @@ where
                         .get(&song.file_path)
                         .cloned()
                         .unwrap_or(
-                            self.metadata_parser
-                                .get_song_filters_metadata(Path::new(&song.file_path))?,
+                            self.song_metadata_filter_sync
+                                .read_song_filters_metadata(Path::new(&song.file_path))?,
                         ),
                 ))
             })
@@ -239,62 +242,25 @@ where
         for song in songs {
             song_ids_by_path.insert(song.file_path, song.id);
         }
-
-        let existing_filters = self.filter.get_all(&mut *tx).await?;
-        let mut filters_by_name = HashMap::new();
-        for filter in existing_filters {
-            filters_by_name.insert(filter.name.clone(), filter);
-        }
-
-        let mut song_filters_to_add = Vec::new();
+        let mut filters_by_name = self
+            .song_metadata_filter_sync
+            .load_filters_by_name(&mut *tx)
+            .await?;
 
         for (file_path, metadata_filters) in song_metadata_filters {
-            if metadata_filters.is_empty() {
-                continue;
-            }
-
             let song_id = *song_ids_by_path.get(&file_path).ok_or_else(|| {
                 anyhow::anyhow!("Imported song not found for file path {}", file_path)
             })?;
 
-            let mut seen_filter_names = HashSet::new();
-
-            for metadata_filter in metadata_filters {
-                if !seen_filter_names.insert(metadata_filter.name.clone()) {
-                    continue;
-                }
-
-                let db_filter = match filters_by_name.get(&metadata_filter.name) {
-                    Some(filter) => filter.clone(),
-                    None => {
-                        self.filter.add(&mut *tx, &metadata_filter.name).await?;
-                        let filter = self
-                            .filter
-                            .get_by_name(&mut *tx, &metadata_filter.name)
-                            .await?;
-                        filters_by_name.insert(filter.name.clone(), filter.clone());
-                        filter
-                    }
-                };
-
-                song_filters_to_add.push(SongFilter {
-                    id: 0,
+            self.song_metadata_filter_sync
+                .sync_song_filters_with_cache(
+                    &mut *tx,
                     song_id,
-                    filter_id: db_filter.id,
-                });
-            }
+                    metadata_filters,
+                    &mut filters_by_name,
+                )
+                .await?;
         }
-
-        if song_filters_to_add.is_empty() {
-            return Ok(());
-        }
-
-        self.song_filter
-            .add_multiple(&mut *tx, song_filters_to_add)
-            .await?;
-        self.song_mutation
-            .refresh_all_song_search_blobs(&mut *tx)
-            .await?;
 
         Ok(())
     }
@@ -762,7 +728,6 @@ where
     }
 
     pub async fn get_current_song_seek(&self) -> usize {
-        log::info!("entered get_current_song_seek");
         match self.current_player_seek_seconds() {
             Ok(seek_value) => seek_value,
             Err(_) => self.setting.get_current_song_seek(&self.pool).await,
@@ -770,7 +735,6 @@ where
     }
 
     pub async fn save_current_song_seek(&self, seek_value: usize) -> anyhow::Result<usize> {
-        log::info!("entered save_current_song_seek");
         let seek_value = self.current_player_seek_seconds().unwrap_or(seek_value);
 
         self.setting
@@ -781,22 +745,18 @@ where
     }
 
     pub async fn increase_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
-        log::info!("entered increase_current_song_seek_by_seconds");
         let seek_value = { self.lock_player()?.seek_pos() };
         let new_seek_value = seek_value.as_secs().saturating_add(seconds);
         self.set_current_song_seek(new_seek_value as usize).await
     }
 
     pub async fn decrease_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
-        log::info!("entered decrease_current_song_seek_by_seconds");
         let seek_value = { self.lock_player()?.seek_pos() };
         let new_seek_value = seek_value.as_secs().saturating_sub(seconds);
         self.set_current_song_seek(new_seek_value as usize).await
     }
 
     pub async fn set_current_song_seek(&self, seek_value: usize) -> anyhow::Result<()> {
-        log::info!("entered set_current_song_seek");
-
         self.setting
             .set_current_song_seek(&self.pool, seek_value)
             .await?;

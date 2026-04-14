@@ -18,6 +18,7 @@ mod search_blob;
 pub mod setting;
 pub mod song;
 pub mod song_filter;
+pub mod song_metadata_filter_sync;
 pub mod song_mutation;
 pub mod song_query;
 pub mod sqlite;

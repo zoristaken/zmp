@@ -40,6 +40,7 @@ fn push_song_insert_values<'a>(query: &mut QueryBuilder<'a, Sqlite>, songs: &'a 
 }
 
 pub async fn new(path: &str) -> anyhow::Result<SqlitePool> {
+    log::info!("opening sqlite database at path[{path}]");
     let pool = SqlitePool::connect_with(
         SqliteConnectOptions::from_str(path)
             .with_context(|| format!("invalid database path {}", path))?
@@ -65,6 +66,12 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!(
+            "db hit add_song file_path[{}] title[{}] artist[{}]",
+            song.file_path,
+            song.title,
+            song.artist
+        );
         let conn = &mut *acquiree.acquire().await?;
 
         let saved_song = sqlx::query_as::<sqlx::Sqlite, Song>(
@@ -94,6 +101,11 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!(
+            "db hit update_song id[{}] file_path[{}]",
+            song.id,
+            song.file_path
+        );
         let conn = &mut *acquiree.acquire().await?;
 
         let result = sqlx::query(
@@ -124,6 +136,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit remove_song id[{song_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let result = sqlx::query("DELETE FROM song WHERE id = ?")
@@ -138,6 +151,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit replace_all songs_count[{}]", songs.len());
         let conn = &mut *acquiree.acquire().await?;
 
         sqlx::query("DELETE FROM song").execute(&mut *conn).await?;
@@ -160,6 +174,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit add_all songs_count[{}]", songs.len());
         let conn = &mut *acquiree.acquire().await?;
 
         for chunk in songs.chunks(SONG_INSERT_BATCH_SIZE) {
@@ -182,6 +197,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_all_songs");
         let conn = &mut *acquiree.acquire().await?;
 
         let songs = sqlx::query_as::<sqlx::Sqlite, Song>(
@@ -229,6 +245,10 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!(
+            "db hit search_by_db words_count[{}] max_results[{max_results}]",
+            words.len()
+        );
         let mut qb = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
             "SELECT id, title, artist, release_year, album, remix, search_blob, file_path, duration, extension, file_size, file_modified_millis FROM song WHERE ",
         );
@@ -258,6 +278,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_song_by_id id[{id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song = sqlx::query_as::<sqlx::Sqlite, Song>(
@@ -278,6 +299,7 @@ impl SongRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_by_title_artist title[{title}] artist[{artist}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song = sqlx::query_as::<sqlx::Sqlite, Song>(
@@ -298,6 +320,7 @@ impl FilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit add_filter name[{name}]");
         let conn = &mut *acquiree.acquire().await?;
 
         sqlx::query("INSERT INTO filter (name) VALUES (?)")
@@ -311,6 +334,7 @@ impl FilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_all_filters");
         let conn = &mut *acquiree.acquire().await?;
         let filter =
             sqlx::query_as::<sqlx::Sqlite, Filter>("SELECT id, name FROM filter ORDER BY id")
@@ -324,6 +348,7 @@ impl FilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_filter_by_name name[{name}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let filter =
@@ -339,6 +364,7 @@ impl FilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_filter_by_id id[{filter_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let filter =
@@ -354,6 +380,7 @@ impl FilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit remove_filter id[{filter_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let result = sqlx::query("DELETE FROM filter WHERE id = ?")
@@ -374,6 +401,7 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit add_song_filter song_id[{song_id}] filter_id[{filter_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         sqlx::query(
@@ -396,6 +424,7 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit remove_song_filter id[{song_filter_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let result = sqlx::query("DELETE FROM song_filter WHERE id = ?")
@@ -417,6 +446,10 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!(
+            "db hit add_multiple_song_filters count[{}]",
+            song_filters.len()
+        );
         let conn = &mut *acquiree.acquire().await?;
 
         for val in song_filters {
@@ -437,6 +470,7 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_song_filter_by_id id[{id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
@@ -457,6 +491,7 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_song_filters_by_filter filter_id[{filter_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
@@ -473,6 +508,7 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_song_filters_by_song song_id[{song_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filter = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
@@ -489,6 +525,7 @@ impl SongFilterRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit get_all_song_filters");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filters = sqlx::query_as::<sqlx::Sqlite, SongFilter>(
@@ -507,6 +544,7 @@ impl SettingRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit setting_set key[{key}]");
         let mut conn = acquiree.acquire().await?;
         sqlx::query("INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
                     .bind(key)
@@ -520,6 +558,7 @@ impl SettingRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit setting_get key[{key}]");
         let mut conn = acquiree.acquire().await?;
         Ok(
             sqlx::query_as::<sqlx::Sqlite, Setting>("SELECT key, value FROM setting WHERE key = ?")
@@ -533,6 +572,7 @@ impl SettingRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit setting_get_many keys_count[{}]", keys.len());
         if keys.is_empty() {
             return Ok(Vec::new());
         }
@@ -567,6 +607,11 @@ impl SongQueryRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!(
+            "db hit search_by_db_with_filters words_count[{}] max_results[{max_results}] pinned_song_id[{:?}]",
+            words.len(),
+            pinned_song_id
+        );
         fn push_search_blob_conditions(
             query: &mut QueryBuilder<'_, Sqlite>,
             alias: &str,
@@ -714,6 +759,7 @@ impl SongMutationRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit refresh_song_search_blob song_id[{song_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_row = sqlx::query(
@@ -779,6 +825,7 @@ impl SongMutationRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit refresh_all_song_search_blobs");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_rows = sqlx::query(
@@ -814,6 +861,9 @@ impl SongMutationRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!(
+            "db hit add_filter_to_song_and_reindex song_id[{song_id}] filter_id[{filter_id}]"
+        );
         let conn = &mut *acquiree.acquire().await?;
 
         let insert_result = sqlx::query(
@@ -842,6 +892,7 @@ impl SongMutationRepository<Sqlite> for SqliteImpl {
     where
         A: Acquire<'a, Database = Sqlite> + Send,
     {
+        log::info!("db hit remove_filter_from_song_and_reindex song_filter_id[{song_filter_id}]");
         let conn = &mut *acquiree.acquire().await?;
 
         let song_filter_row = sqlx::query(

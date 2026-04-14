@@ -362,7 +362,6 @@ where
         &self,
         tx: &mut sqlx::Transaction<'_, DB>,
     ) -> anyhow::Result<()> {
-        log::info!("entered reset_library_state");
         self.set_saved_search_blob(&mut *tx, "").await?;
         self.set_saved_index(&mut *tx, 0).await?;
         self.set_current_song_seek(&mut *tx, 0).await?;
@@ -857,8 +856,6 @@ where
         tx: &mut sqlx::Transaction<'_, DB>,
         current_index: Option<usize>,
     ) -> anyhow::Result<()> {
-        log::info!("entered persist_started_track_in");
-
         self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
             .await?;
         self.set_current_song_seek(&mut *tx, 0).await?;
@@ -874,8 +871,6 @@ where
         current_index: Option<usize>,
         cleared_current_song: bool,
     ) -> anyhow::Result<()> {
-        log::info!("entered persist_queue_sync_in");
-
         self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
             .await?;
 
@@ -891,7 +886,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        log::info!("trying to set key[{key}] -> value[{value}]");
+        log::debug!("trying to set key[{key}] -> value[{value}]");
 
         self.repo
             .set(acquiree, key, value)
@@ -925,7 +920,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        log::info!("trying to get key[{key}]");
+        log::debug!("trying to get key[{key}]");
 
         self.repo
             .get(acquiree, key)
@@ -941,7 +936,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        log::info!("trying to get keys[{}]", keys.join(","));
+        log::debug!("trying to get keys[{}]", keys.join(","));
 
         let settings = self
             .repo
