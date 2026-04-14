@@ -498,7 +498,9 @@
 
         if (!isPlaying || isSeeking || !currentSong) return;
 
-        if (currentSeekSeconds < currentSong.song.duration) {
+        //TODO (zor): make the backend always deal with next song logic
+        //and the frontend only updates the value
+        if (currentSeekSeconds < Math.max(0, currentSong.song.duration - 1)) {
           return;
         }
 
@@ -664,7 +666,10 @@
       return;
     }
 
-    if (shouldRestoreQueuedViewport && currentSongId === previousCurrentSongId) {
+    if (
+      shouldRestoreQueuedViewport &&
+      currentSongId === previousCurrentSongId
+    ) {
       await tick();
       if (songListElement && pendingSongListViewportRestoreTop !== null) {
         songListElement.scrollTop = pendingSongListViewportRestoreTop;
