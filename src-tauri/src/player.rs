@@ -348,6 +348,13 @@ impl Player {
     }
 }
 
+//TODO (zor): add actual integration tests, to test if the player wrapper behaves as expected
+//test all the below with an intended supported file (currently only have metadata tests with a fake wav file)
+//test skipping failed decodes
+//test next and previous song on loop
+//test if the current_index and queue are the expected value
+//test if player starts properly defautled and when loaded with state
+//...
 #[cfg(test)]
 mod tests {
     use crate::{song::Song, song_query::SongWithFilters};

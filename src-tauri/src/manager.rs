@@ -14,6 +14,10 @@ use crate::{
     song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
 };
 
+//TODO (zor): current fails in playback change are not persisted in the database.
+//Should be a somewhat simple fix by adding a playable flag to the song table and
+//making the backend sync the flag state before sending to the frontend
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackChange {
     pub current_index: Option<usize>,
