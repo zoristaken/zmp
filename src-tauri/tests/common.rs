@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use id3::{Tag, TagLike, Version};
 use sqlx::SqlitePool;
 use zmp_lib::{
     filter::{Filter, FilterService},
@@ -12,6 +15,60 @@ pub async fn setup_db() -> SqlitePool {
     let _ = sqlx::migrate!("./migrations").run(&pool).await;
 
     pool
+}
+
+pub fn write_test_wav(path: &Path, duration_secs: u32) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 8_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+
+    let mut writer = hound::WavWriter::create(path, spec).unwrap();
+
+    let total_samples = 8_000 * duration_secs;
+    for _ in 0..total_samples {
+        writer.write_sample(0i16).unwrap();
+    }
+
+    writer.finalize().unwrap();
+}
+
+pub fn write_id3_tag(
+    path: &Path,
+    title: Option<&str>,
+    artist: Option<&str>,
+    album: Option<&str>,
+    year: Option<i32>,
+    remixer: Option<&str>,
+) {
+    let mut tag = Tag::new();
+
+    if let Some(title) = title {
+        tag.set_title(title);
+    }
+
+    if let Some(artist) = artist {
+        tag.set_artist(artist);
+    }
+
+    if let Some(album) = album {
+        tag.set_album(album);
+    }
+
+    if let Some(year) = year {
+        tag.set_year(year);
+    }
+
+    if let Some(remixer) = remixer {
+        tag.add_frame(id3::Frame::with_content(
+            "TPE4",
+            id3::Content::Text(remixer.to_string()),
+        ));
+    }
+
+    tag.write_to_path(path, Version::Id3v24).unwrap();
 }
 
 pub async fn setup_db_with_song_and_filters() -> SqlitePool {

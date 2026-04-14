@@ -86,6 +86,17 @@ where
             .await
     }
 
+    pub async fn refresh_song_search_blob<'a, A>(
+        &self,
+        acquiree: A,
+        song_id: i32,
+    ) -> anyhow::Result<bool>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        self.repo.refresh_song_search_blob(acquiree, song_id).await
+    }
+
     pub async fn refresh_all_song_search_blobs<'a, A>(&self, acquiree: A) -> anyhow::Result<usize>
     where
         A: Acquire<'a, Database = DB> + Send,

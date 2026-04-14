@@ -18,10 +18,14 @@ mod search_blob;
 pub mod setting;
 pub mod song;
 pub mod song_filter;
+pub mod song_metadata_filter_sync;
 pub mod song_mutation;
 pub mod song_query;
 pub mod sqlite;
 mod watcher;
+
+const MAX_LOG_FILE_SIZE: u128 = 1024 * 1024 * 5; //5 MB
+const MAX_N_LOG_FILES: usize = 5;
 
 pub struct AppState {
     pub zmp: PlayerManager<SqliteImpl, Sqlite>,
@@ -34,6 +38,10 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
+                .max_file_size(MAX_LOG_FILE_SIZE)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(
+                    MAX_N_LOG_FILES,
+                ))
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

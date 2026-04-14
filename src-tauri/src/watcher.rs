@@ -17,9 +17,12 @@ use tokio::{
 };
 
 use crate::{
+    filter::FilterRepository,
     metadata::{DiscoveredMusicFile, MetadataParser},
     setting::{MusicFolderSyncSettings, SettingRepository, SettingService},
     song::{Song, SongRepository, SongService},
+    song_filter::SongFilterRepository,
+    song_metadata_filter_sync::SongMetadataFilterSyncService,
     song_mutation::{SongMutationRepository, SongMutationService},
 };
 
@@ -32,12 +35,17 @@ enum WatcherSignal {
 pub struct MusicFolderWatcher<R, DB>
 where
     DB: Database,
-    R: SettingRepository<DB> + SongRepository<DB> + SongMutationRepository<DB>,
+    R: SettingRepository<DB>
+        + SongRepository<DB>
+        + FilterRepository<DB>
+        + SongFilterRepository<DB>
+        + SongMutationRepository<DB>,
 {
     app: AppHandle,
     setting: SettingService<R, DB>,
     song: SongService<R, DB>,
     song_mutation: SongMutationService<R, DB>,
+    song_metadata_filter_sync: SongMetadataFilterSyncService<R, DB>,
     metadata_parser: MetadataParser,
     pool: Pool<DB>,
     has_loaded_saved_state: AtomicBool,
@@ -48,7 +56,12 @@ where
 impl<R, DB> MusicFolderWatcher<R, DB>
 where
     DB: Database,
-    R: SettingRepository<DB> + SongRepository<DB> + SongMutationRepository<DB> + Clone,
+    R: SettingRepository<DB>
+        + SongRepository<DB>
+        + FilterRepository<DB>
+        + SongFilterRepository<DB>
+        + SongMutationRepository<DB>
+        + Clone,
 {
     pub fn new(app: AppHandle, pool: Pool<DB>, repos: R) -> Self {
         let (signal_tx, signal_rx) = mpsc::unbounded_channel();
@@ -57,7 +70,8 @@ where
             app,
             setting: SettingService::new(repos.clone()),
             song: SongService::new(repos.clone()),
-            song_mutation: SongMutationService::new(repos),
+            song_mutation: SongMutationService::new(repos.clone()),
+            song_metadata_filter_sync: SongMetadataFilterSyncService::new(repos),
             metadata_parser: MetadataParser::new(),
             pool,
             has_loaded_saved_state: AtomicBool::new(false),
@@ -183,6 +197,7 @@ where
             .into_iter()
             .map(|song| (song.file_path.clone(), song))
             .collect::<HashMap<_, _>>();
+        let mut filters_by_name = None;
         let mut changed = false;
 
         for discovered_file in discovered_files {
@@ -203,6 +218,36 @@ where
                                 self.song.update_song(&mut tx, updated_song).await?;
                                 changed = true;
                             }
+
+                            let metadata_filters = self
+                                .song_metadata_filter_sync
+                                .read_song_filters_metadata(&discovered_file.path)?;
+                            if filters_by_name.is_none() {
+                                filters_by_name = Some(
+                                    self.song_metadata_filter_sync
+                                        .load_filters_by_name(&mut tx)
+                                        .await?,
+                                );
+                            }
+
+                            match self
+                                .song_metadata_filter_sync
+                                .sync_song_filters_with_cache(
+                                    &mut tx,
+                                    existing_song.id,
+                                    metadata_filters,
+                                    filters_by_name.as_mut().expect("filter cache initialized"),
+                                )
+                                .await
+                            {
+                                Ok(filters_changed) => changed |= filters_changed,
+                                Err(err) => {
+                                    log::warn!(
+                                        "Failed to sync metadata filters for changed music file {}: {err}",
+                                        discovered_file.file_path
+                                    );
+                                }
+                            }
                         }
                         Err(err) => {
                             log::warn!(
@@ -217,7 +262,36 @@ where
                     .parse_discovered_music_file(&discovered_file)
                 {
                     Ok(scanned_song) => {
-                        self.song.add_song(&mut tx, scanned_song).await?;
+                        let added_song = self.song.add_song(&mut tx, scanned_song).await?;
+                        let metadata_filters = self
+                            .song_metadata_filter_sync
+                            .read_song_filters_metadata(&discovered_file.path)?;
+                        if filters_by_name.is_none() {
+                            filters_by_name = Some(
+                                self.song_metadata_filter_sync
+                                    .load_filters_by_name(&mut tx)
+                                    .await?,
+                            );
+                        }
+
+                        match self
+                            .song_metadata_filter_sync
+                            .sync_song_filters_with_cache(
+                                &mut tx,
+                                added_song.id,
+                                metadata_filters,
+                                filters_by_name.as_mut().expect("filter cache initialized"),
+                            )
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(err) => {
+                                log::warn!(
+                                    "Failed to sync metadata filters for new music file {}: {err}",
+                                    discovered_file.file_path
+                                );
+                            }
+                        }
                         changed = true;
                     }
                     Err(err) => {

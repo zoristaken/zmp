@@ -33,6 +33,7 @@ const SWITCH_SONG_FILTER_PANE_KEYBIND: &str = "switch_song_filter_pane_kb";
 const APPLY_SELECTED_FILTER_KEYBIND: &str = "apply_selected_filter_kb";
 const INDEX_VALUE: &str = "index_value";
 const CURRENT_SEEK_VALUE: &str = "current_seek_value";
+const PENDING_SONG_METADATA_SYNC_PATHS: &str = "pending_song_metadata_sync_paths";
 pub const DEFAULT_VOLUME: rodio::Float = 0.5;
 pub const DEFAULT_SONG_LIST_LIMIT: i32 = 10_000;
 
@@ -361,7 +362,6 @@ where
         &self,
         tx: &mut sqlx::Transaction<'_, DB>,
     ) -> anyhow::Result<()> {
-        log::info!("entered reset_library_state");
         self.set_saved_search_blob(&mut *tx, "").await?;
         self.set_saved_index(&mut *tx, 0).await?;
         self.set_current_song_seek(&mut *tx, 0).await?;
@@ -432,6 +432,41 @@ where
         A: Acquire<'a, Database = DB> + Send,
     {
         self.set(acquiree, CURRENT_SEEK_VALUE, &value.to_string())
+            .await
+    }
+
+    pub async fn get_pending_song_metadata_sync_paths<'a, A>(&self, acquiree: A) -> Vec<String>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        match self
+            .get_value(acquiree, PENDING_SONG_METADATA_SYNC_PATHS)
+            .await
+        {
+            Ok(value) => serde_json::from_str::<Vec<String>>(&value).unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    pub async fn set_pending_song_metadata_sync_paths<'a, A>(
+        &self,
+        acquiree: A,
+        file_paths: &[String],
+    ) -> anyhow::Result<()>
+    where
+        A: Acquire<'a, Database = DB> + Send,
+    {
+        let mut normalized = file_paths
+            .iter()
+            .map(|path| path.trim())
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        normalized.sort();
+        normalized.dedup();
+
+        let value = serde_json::to_string(&normalized)?;
+        self.set(acquiree, PENDING_SONG_METADATA_SYNC_PATHS, &value)
             .await
     }
 
@@ -821,8 +856,6 @@ where
         tx: &mut sqlx::Transaction<'_, DB>,
         current_index: Option<usize>,
     ) -> anyhow::Result<()> {
-        log::info!("entered persist_started_track_in");
-
         self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
             .await?;
         self.set_current_song_seek(&mut *tx, 0).await?;
@@ -838,8 +871,6 @@ where
         current_index: Option<usize>,
         cleared_current_song: bool,
     ) -> anyhow::Result<()> {
-        log::info!("entered persist_queue_sync_in");
-
         self.set_saved_index(&mut *tx, current_index.unwrap_or(0))
             .await?;
 
@@ -855,7 +886,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        log::info!("trying to set key[{key}] -> value[{value}]");
+        log::debug!("trying to set key[{key}] -> value[{value}]");
 
         self.repo
             .set(acquiree, key, value)
@@ -889,7 +920,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        log::info!("trying to get key[{key}]");
+        log::debug!("trying to get key[{key}]");
 
         self.repo
             .get(acquiree, key)
@@ -905,7 +936,7 @@ where
     where
         A: Acquire<'a, Database = DB> + Send,
     {
-        log::info!("trying to get keys[{}]", keys.join(","));
+        log::debug!("trying to get keys[{}]", keys.join(","));
 
         let settings = self
             .repo

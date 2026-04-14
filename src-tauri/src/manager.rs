@@ -1,4 +1,8 @@
-use std::{path::Path, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::Mutex,
+};
 
 use serde::Serialize;
 use sqlx::{Database, Pool};
@@ -10,6 +14,7 @@ use crate::{
     setting::{AppSettingsSnapshot, SettingRepository, SettingService},
     song::{Song, SongRepository, SongService},
     song_filter::{SongFilter, SongFilterRepository, SongFilterService},
+    song_metadata_filter_sync::SongMetadataFilterSyncService,
     song_mutation::{SongMutationRepository, SongMutationService},
     song_query::{SongQueryRepository, SongQueryService, SongWithFilters},
 };
@@ -71,6 +76,7 @@ where
     pub song_mutation: SongMutationService<R, DB>,
     pub song_filter: SongFilterService<R, DB>,
     pub filter: FilterService<R, DB>,
+    song_metadata_filter_sync: SongMetadataFilterSyncService<R, DB>,
     pub metadata_parser: MetadataParser,
     pub player: Mutex<Player>,
     preview_search: Mutex<Option<PreviewSearch>>,
@@ -110,6 +116,7 @@ where
             song_mutation: SongMutationService::new(repos.clone()),
             song_filter: SongFilterService::new(repos.clone()),
             filter: FilterService::new(repos.clone()),
+            song_metadata_filter_sync: SongMetadataFilterSyncService::new(repos.clone()),
             metadata_parser: MetadataParser::new(),
             player: Mutex::new(Player::new()),
             preview_search: Mutex::new(None),
@@ -127,12 +134,270 @@ where
     }
 
     pub async fn process_music_folder(&self) -> anyhow::Result<()> {
+        self.flush_deferred_song_filters_metadata().await?;
+
+        let pending_song_metadata_sync_paths = self
+            .setting
+            .get_pending_song_metadata_sync_paths(&self.pool)
+            .await;
+        let pending_song_db_filters = self
+            .collect_pending_song_db_filters(&pending_song_metadata_sync_paths)
+            .await?;
+
         let folder_path = self.setting.get_music_folder_path(&self.pool).await?;
         let songs = self
             .metadata_parser
             .parse_song_metadata(Path::new(&folder_path))?;
 
-        self.replace_library_and_reset_state(songs).await
+        let song_metadata_filters =
+            self.collect_song_metadata_filters(&songs, &pending_song_db_filters)?;
+
+        self.replace_library_with_metadata_filters_and_reset_state(songs, song_metadata_filters)
+            .await
+    }
+
+    async fn collect_pending_song_db_filters(
+        &self,
+        pending_song_metadata_sync_paths: &[String],
+    ) -> anyhow::Result<HashMap<String, Vec<Filter>>> {
+        if pending_song_metadata_sync_paths.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let pending_song_metadata_sync_paths = pending_song_metadata_sync_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+
+        let mut tx = self.pool.begin().await?;
+        let songs = self.song.list_songs(&mut tx).await?;
+        let mut filters_by_path = HashMap::new();
+
+        for song in songs {
+            if !pending_song_metadata_sync_paths.contains(song.file_path.as_str()) {
+                continue;
+            }
+
+            filters_by_path.insert(
+                song.file_path,
+                self.load_song_filters_in_tx(&mut tx, song.id).await?,
+            );
+        }
+
+        tx.commit().await?;
+
+        Ok(filters_by_path)
+    }
+
+    fn collect_song_metadata_filters(
+        &self,
+        songs: &[Song],
+        pending_song_db_filters: &HashMap<String, Vec<Filter>>,
+    ) -> anyhow::Result<Vec<(String, Vec<Filter>)>> {
+        songs
+            .iter()
+            .map(|song| {
+                Ok((
+                    song.file_path.clone(),
+                    pending_song_db_filters
+                        .get(&song.file_path)
+                        .cloned()
+                        .unwrap_or(
+                            self.song_metadata_filter_sync
+                                .read_song_filters_metadata(Path::new(&song.file_path))?,
+                        ),
+                ))
+            })
+            .collect()
+    }
+
+    async fn replace_library_with_metadata_filters_and_reset_state(
+        &self,
+        songs: Vec<Song>,
+        song_metadata_filters: Vec<(String, Vec<Filter>)>,
+    ) -> anyhow::Result<()> {
+        self.clear_preview_search()?;
+        let mut tx = self.pool.begin().await?;
+
+        self.song.replace_songs(&mut tx, songs).await?;
+        self.import_song_metadata_filters(&mut tx, song_metadata_filters)
+            .await?;
+        self.setting.reset_library_state(&mut tx).await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn import_song_metadata_filters(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        song_metadata_filters: Vec<(String, Vec<Filter>)>,
+    ) -> anyhow::Result<()> {
+        if song_metadata_filters.is_empty() {
+            return Ok(());
+        }
+
+        let songs = self.song.list_songs(&mut *tx).await?;
+        let mut song_ids_by_path = HashMap::new();
+        for song in songs {
+            song_ids_by_path.insert(song.file_path, song.id);
+        }
+        let mut filters_by_name = self
+            .song_metadata_filter_sync
+            .load_filters_by_name(&mut *tx)
+            .await?;
+
+        for (file_path, metadata_filters) in song_metadata_filters {
+            let song_id = *song_ids_by_path.get(&file_path).ok_or_else(|| {
+                anyhow::anyhow!("Imported song not found for file path {}", file_path)
+            })?;
+
+            self.song_metadata_filter_sync
+                .sync_song_filters_with_cache(
+                    &mut *tx,
+                    song_id,
+                    metadata_filters,
+                    &mut filters_by_name,
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn sync_song_filters_metadata(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        song_id: i32,
+    ) -> anyhow::Result<()> {
+        let song = self.song.get_song_by_id(&mut *tx, song_id).await?;
+        let filters = self.load_song_filters_in_tx(&mut *tx, song_id).await?;
+        self.metadata_parser
+            .add_song_filters_metadata(Path::new(&song.file_path), filters)?;
+
+        Ok(())
+    }
+
+    async fn load_song_filters_in_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        song_id: i32,
+    ) -> anyhow::Result<Vec<Filter>> {
+        let song_filters = self.song_filter.get_by_song(&mut *tx, song_id).await?;
+        let mut filters = Vec::with_capacity(song_filters.len());
+
+        for song_filter in song_filters {
+            filters.push(
+                self.filter
+                    .get_by_id(&mut *tx, song_filter.filter_id)
+                    .await?,
+            );
+        }
+
+        Ok(filters)
+    }
+
+    async fn sync_song_filters_metadata_by_file_paths(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        file_paths: Vec<String>,
+    ) -> anyhow::Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+
+        let songs = self.song.list_songs(&mut *tx).await?;
+        let song_ids_by_path = songs
+            .into_iter()
+            .map(|song| (song.file_path, song.id))
+            .collect::<HashMap<_, _>>();
+
+        for file_path in file_paths {
+            if let Some(song_id) = song_ids_by_path.get(&file_path).copied() {
+                self.sync_song_filters_metadata(&mut *tx, song_id).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn defer_song_filters_metadata_sync_paths(
+        &self,
+        tx: &mut sqlx::Transaction<'_, DB>,
+        file_paths: Vec<String>,
+    ) -> anyhow::Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+
+        let mut pending_file_paths = self
+            .setting
+            .get_pending_song_metadata_sync_paths(&mut *tx)
+            .await;
+        pending_file_paths.extend(file_paths);
+        self.setting
+            .set_pending_song_metadata_sync_paths(&mut *tx, &pending_file_paths)
+            .await
+    }
+
+    fn partition_song_metadata_sync_paths(
+        file_paths: Vec<String>,
+        current_song_file_path: Option<&str>,
+    ) -> (Vec<String>, Vec<String>) {
+        let mut ready_to_sync = Vec::new();
+        let mut deferred = Vec::new();
+        let mut seen = HashSet::new();
+
+        for file_path in file_paths {
+            if !seen.insert(file_path.clone()) {
+                continue;
+            }
+
+            if current_song_file_path == Some(file_path.as_str()) {
+                deferred.push(file_path);
+            } else {
+                ready_to_sync.push(file_path);
+            }
+        }
+
+        (ready_to_sync, deferred)
+    }
+
+    async fn flush_deferred_song_filters_metadata(&self) -> anyhow::Result<()> {
+        let current_song_file_path = self.current_song_file_path()?;
+        let mut tx = self.pool.begin().await?;
+        let pending_file_paths = self
+            .setting
+            .get_pending_song_metadata_sync_paths(&mut tx)
+            .await;
+        let (ready_to_sync, deferred) = Self::partition_song_metadata_sync_paths(
+            pending_file_paths,
+            current_song_file_path.as_deref(),
+        );
+
+        if ready_to_sync.is_empty() {
+            return Ok(());
+        }
+
+        self.sync_song_filters_metadata_by_file_paths(&mut tx, ready_to_sync)
+            .await?;
+        self.setting
+            .set_pending_song_metadata_sync_paths(&mut tx, &deferred)
+            .await?;
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    fn current_song_file_path(&self) -> anyhow::Result<Option<String>> {
+        let player = self
+            .player
+            .lock()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+        Ok(player
+            .current_song()
+            .map(|song| song.song.file_path.clone()))
     }
 
     async fn reload_song_list(&self) -> anyhow::Result<SongListChange> {
@@ -253,6 +518,8 @@ where
     }
 
     pub async fn load(&self) -> anyhow::Result<PlayerLoadState> {
+        self.flush_deferred_song_filters_metadata().await?;
+
         let mut tx = self.pool.begin().await?;
         let pinned_song_id = self.current_song_id()?;
 
@@ -283,6 +550,7 @@ where
                 .set_saved_index(&self.pool, current_index.unwrap_or(0))
                 .await?;
         }
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(PlayerLoadState {
             count,
@@ -369,6 +637,7 @@ where
         } else if result.current_index.is_none() {
             self.setting.persist_started_track(&self.pool, None).await?;
         }
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(result)
     }
@@ -395,6 +664,7 @@ where
         let count = songs.len();
         let sync = self.sync_song_list(songs)?;
         let current_index = self.persist_queue_sync(sync).await?;
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(SongListChange {
             count,
@@ -428,6 +698,7 @@ where
         } else if result.current_index.is_none() {
             self.setting.persist_started_track(&self.pool, None).await?;
         }
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(result)
     }
@@ -451,12 +722,12 @@ where
         } else if result.current_index.is_none() {
             self.setting.persist_started_track(&self.pool, None).await?;
         }
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(result)
     }
 
     pub async fn get_current_song_seek(&self) -> usize {
-        log::info!("entered get_current_song_seek");
         match self.current_player_seek_seconds() {
             Ok(seek_value) => seek_value,
             Err(_) => self.setting.get_current_song_seek(&self.pool).await,
@@ -464,7 +735,6 @@ where
     }
 
     pub async fn save_current_song_seek(&self, seek_value: usize) -> anyhow::Result<usize> {
-        log::info!("entered save_current_song_seek");
         let seek_value = self.current_player_seek_seconds().unwrap_or(seek_value);
 
         self.setting
@@ -475,22 +745,18 @@ where
     }
 
     pub async fn increase_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
-        log::info!("entered increase_current_song_seek_by_seconds");
         let seek_value = { self.lock_player()?.seek_pos() };
         let new_seek_value = seek_value.as_secs().saturating_add(seconds);
         self.set_current_song_seek(new_seek_value as usize).await
     }
 
     pub async fn decrease_current_song_seek_by_seconds(&self, seconds: u64) -> anyhow::Result<()> {
-        log::info!("entered decrease_current_song_seek_by_seconds");
         let seek_value = { self.lock_player()?.seek_pos() };
         let new_seek_value = seek_value.as_secs().saturating_sub(seconds);
         self.set_current_song_seek(new_seek_value as usize).await
     }
 
     pub async fn set_current_song_seek(&self, seek_value: usize) -> anyhow::Result<()> {
-        log::info!("entered set_current_song_seek");
-
         self.setting
             .set_current_song_seek(&self.pool, seek_value)
             .await?;
@@ -583,10 +849,38 @@ where
     pub async fn remove_filter(&self, filter_id: i32) -> anyhow::Result<QueueMutation> {
         let mut tx = self.pool.begin().await?;
         let pinned_song_id = self.current_song_id()?;
+        let current_song_file_path = self.current_song_file_path()?;
+        let affected_song_ids = self
+            .song_filter
+            .get_by_filter(&mut tx, filter_id)
+            .await?
+            .into_iter()
+            .map(|song_filter| song_filter.song_id)
+            .collect::<HashSet<_>>();
+        let affected_song_file_paths = self
+            .song
+            .list_songs(&mut tx)
+            .await?
+            .into_iter()
+            .filter(|song| affected_song_ids.contains(&song.id))
+            .map(|song| song.file_path)
+            .collect::<Vec<_>>();
 
         let removed = self.filter.remove(&mut tx, filter_id).await?;
 
         if removed {
+            let (ready_to_sync, deferred) = Self::partition_song_metadata_sync_paths(
+                affected_song_file_paths,
+                current_song_file_path.as_deref(),
+            );
+
+            self.sync_song_filters_metadata_by_file_paths(&mut tx, ready_to_sync)
+                .await?;
+            self.defer_song_filters_metadata_sync_paths(&mut tx, deferred)
+                .await?;
+
+            //TODO (zor): optimization - it should only refresh the song blobs of songs that had the
+            //filter
             self.song_mutation
                 .refresh_all_song_search_blobs(&mut tx)
                 .await?;
@@ -606,6 +900,7 @@ where
         } else {
             None
         };
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(QueueMutation {
             changed: removed,
@@ -628,11 +923,25 @@ where
     ) -> anyhow::Result<QueueMutation> {
         let mut tx = self.pool.begin().await?;
         let pinned_song_id = self.current_song_id()?;
+        let current_song_file_path = self.current_song_file_path()?;
 
         let saved = self
             .song_mutation
             .add_filter_to_song_and_reindex(&mut tx, song_id, filter_id)
             .await?;
+
+        if saved {
+            let song_file_path = self.song.get_song_by_id(&mut tx, song_id).await?.file_path;
+            let (ready_to_sync, deferred) = Self::partition_song_metadata_sync_paths(
+                vec![song_file_path],
+                current_song_file_path.as_deref(),
+            );
+
+            self.sync_song_filters_metadata_by_file_paths(&mut tx, ready_to_sync)
+                .await?;
+            self.defer_song_filters_metadata_sync_paths(&mut tx, deferred)
+                .await?;
+        }
 
         let songs = if saved {
             Some(self.load_song_list_in_tx(&mut tx, pinned_song_id).await?)
@@ -648,6 +957,7 @@ where
         } else {
             None
         };
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(QueueMutation {
             changed: saved,
@@ -661,11 +971,30 @@ where
     ) -> anyhow::Result<QueueMutation> {
         let mut tx = self.pool.begin().await?;
         let pinned_song_id = self.current_song_id()?;
+        let current_song_file_path = self.current_song_file_path()?;
+        let song_id = self
+            .song_filter
+            .get_by_id(&mut tx, song_filter_id)
+            .await?
+            .song_id;
+        let song_file_path = self.song.get_song_by_id(&mut tx, song_id).await?.file_path;
 
         let removed = self
             .song_mutation
             .remove_filter_from_song_and_reindex(&mut tx, song_filter_id)
             .await?;
+
+        if removed {
+            let (ready_to_sync, deferred) = Self::partition_song_metadata_sync_paths(
+                vec![song_file_path],
+                current_song_file_path.as_deref(),
+            );
+
+            self.sync_song_filters_metadata_by_file_paths(&mut tx, ready_to_sync)
+                .await?;
+            self.defer_song_filters_metadata_sync_paths(&mut tx, deferred)
+                .await?;
+        }
 
         let songs = if removed {
             Some(self.load_song_list_in_tx(&mut tx, pinned_song_id).await?)
@@ -681,6 +1010,7 @@ where
         } else {
             None
         };
+        self.flush_deferred_song_filters_metadata().await?;
 
         Ok(QueueMutation {
             changed: removed,

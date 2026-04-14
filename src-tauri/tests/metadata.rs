@@ -1,63 +1,11 @@
-use std::path::Path;
+pub mod common;
 
-use id3::{Tag, TagLike, Version};
+use id3::Tag;
 use tempfile::tempdir;
 
+use crate::common::{write_id3_tag, write_test_wav};
+use zmp_lib::filter::Filter;
 use zmp_lib::metadata::MetadataParser;
-
-fn write_test_wav(path: &Path, duration_secs: u32) {
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: 8_000,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-
-    let total_samples = 8_000 * duration_secs;
-    for _ in 0..total_samples {
-        writer.write_sample(0i16).unwrap();
-    }
-
-    writer.finalize().unwrap();
-}
-
-fn write_id3_tag(
-    path: &Path,
-    title: Option<&str>,
-    artist: Option<&str>,
-    album: Option<&str>,
-    year: Option<i32>,
-    remixer: Option<&str>,
-) {
-    let mut tag = Tag::new();
-
-    if let Some(title) = title {
-        tag.set_title(title);
-    }
-
-    if let Some(artist) = artist {
-        tag.set_artist(artist);
-    }
-
-    if let Some(album) = album {
-        tag.set_album(album);
-    }
-
-    if let Some(year) = year {
-        tag.set_year(year);
-    }
-
-    if let Some(remixer) = remixer {
-        tag.add_frame(id3::Frame::with_content(
-            "TPE4",
-            id3::Content::Text(remixer.to_string()),
-        ));
-    }
-
-    tag.write_to_path(path, Version::Id3v24).unwrap();
-}
 
 #[test]
 fn parse_song_metadata_reads_tagged_title_artist_album_year_and_remix() {
@@ -220,6 +168,149 @@ fn parse_song_metadata_falls_back_only_for_missing_artist() {
     assert_eq!(song.remix, "");
     assert_eq!(song.extension, "wav");
     assert_eq!(song.search_blob, "angel massive attack mezzanine 1998");
+}
+
+#[test]
+fn add_song_filters_metadata_writes_zmp_filters_to_id3() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("Massive Attack - Angel.wav");
+
+    write_test_wav(&file, 1);
+    write_id3_tag(
+        &file,
+        Some("Angel"),
+        Some("Massive Attack"),
+        Some("Mezzanine"),
+        Some(1998),
+        None,
+    );
+
+    let parser = MetadataParser::new();
+    parser
+        .add_song_filters_metadata(
+            &file,
+            vec![
+                Filter {
+                    id: 1,
+                    name: "liked".to_string(),
+                },
+                Filter {
+                    id: 2,
+                    name: "chill".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+    let tag = Tag::read_from_path(&file).unwrap();
+    let zmp_filters = tag
+        .extended_texts()
+        .find(|frame| frame.description == "ZMP_FILTERS")
+        .map(|frame| frame.value.clone());
+
+    assert_eq!(zmp_filters.as_deref(), Some("liked|chill"));
+}
+
+#[test]
+fn get_song_filters_metadata_reads_zmp_filters_from_id3() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("Massive Attack - Angel.wav");
+
+    write_test_wav(&file, 1);
+    write_id3_tag(
+        &file,
+        Some("Angel"),
+        Some("Massive Attack"),
+        Some("Mezzanine"),
+        Some(1998),
+        None,
+    );
+
+    let parser = MetadataParser::new();
+    parser
+        .add_song_filters_metadata(
+            &file,
+            vec![
+                Filter {
+                    id: 1,
+                    name: "liked".to_string(),
+                },
+                Filter {
+                    id: 2,
+                    name: "chill".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+    let filters = parser.get_song_filters_metadata(&file).unwrap();
+
+    assert_eq!(filters.len(), 2);
+    assert_eq!(filters[0].id, 0);
+    assert_eq!(filters[0].name, "liked");
+    assert_eq!(filters[1].id, 0);
+    assert_eq!(filters[1].name, "chill");
+}
+
+#[test]
+fn get_song_filters_metadata_returns_empty_vec_when_tag_is_missing() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("Massive Attack - Angel.wav");
+
+    write_test_wav(&file, 1);
+    write_id3_tag(
+        &file,
+        Some("Angel"),
+        Some("Massive Attack"),
+        Some("Mezzanine"),
+        Some(1998),
+        None,
+    );
+
+    let parser = MetadataParser::new();
+    let filters = parser.get_song_filters_metadata(&file).unwrap();
+
+    assert!(filters.is_empty());
+}
+
+#[test]
+fn add_song_filters_metadata_removes_zmp_filters_when_filters_are_empty() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("Massive Attack - Angel.wav");
+
+    write_test_wav(&file, 1);
+    write_id3_tag(
+        &file,
+        Some("Angel"),
+        Some("Massive Attack"),
+        Some("Mezzanine"),
+        Some(1998),
+        None,
+    );
+
+    let parser = MetadataParser::new();
+    parser
+        .add_song_filters_metadata(
+            &file,
+            vec![Filter {
+                id: 1,
+                name: "liked".to_string(),
+            }],
+        )
+        .unwrap();
+
+    parser.add_song_filters_metadata(&file, vec![]).unwrap();
+
+    let filters = parser.get_song_filters_metadata(&file).unwrap();
+    assert!(filters.is_empty());
+
+    let tag = Tag::read_from_path(&file).unwrap();
+    let zmp_filters = tag
+        .extended_texts()
+        .find(|frame| frame.description == "ZMP_FILTERS")
+        .map(|frame| frame.value.clone());
+
+    assert!(zmp_filters.is_none());
 }
 
 #[test]

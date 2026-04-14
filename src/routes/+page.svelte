@@ -214,6 +214,8 @@
   let isRefreshingSeek = false;
   let playbackFailedSongIds: number[] = [];
   let playbackFailedSongIdSet = new Set<number>();
+  let pendingSongListViewportRestoreTop: number | null = null;
+  let pendingSongListViewportRestoreUntil = 0;
 
   let searchInput: HTMLInputElement | null = null;
   let filterLibraryInput: HTMLInputElement | null = null;
@@ -449,6 +451,23 @@
     });
   }
 
+  function queueSongListViewportRestore() {
+    pendingSongListViewportRestoreTop = songListElement?.scrollTop ?? null;
+    pendingSongListViewportRestoreUntil = Date.now() + 1500;
+  }
+
+  function clearQueuedSongListViewportRestore() {
+    pendingSongListViewportRestoreTop = null;
+    pendingSongListViewportRestoreUntil = 0;
+  }
+
+  function hasQueuedSongListViewportRestore() {
+    return (
+      pendingSongListViewportRestoreTop !== null &&
+      Date.now() <= pendingSongListViewportRestoreUntil
+    );
+  }
+
   async function saveSeekProgress() {
     try {
       currentSeekSeconds = await invoke<number>("save_current_song_seek", {
@@ -591,8 +610,9 @@
     const previousSelectedSongId = selectedSongId;
     const previousSelectedIndex = selectedIndex;
     const shouldPreserveViewport =
-      (isSongFilterMenuOpen || isFilterLibraryMenuOpen) &&
-      previousCurrentSongId !== null;
+      isSongFilterMenuOpen || isFilterLibraryMenuOpen;
+    const shouldRestoreQueuedViewport =
+      !isSongFilterMenuOpen && hasQueuedSongListViewportRestore();
 
     selectedIndex = newIndex;
 
@@ -641,6 +661,15 @@
               previousSelectedIndex < songs.length
             ? previousSelectedIndex
             : null;
+      return;
+    }
+
+    if (shouldRestoreQueuedViewport && currentSongId === previousCurrentSongId) {
+      await tick();
+      if (songListElement && pendingSongListViewportRestoreTop !== null) {
+        songListElement.scrollTop = pendingSongListViewportRestoreTop;
+      }
+      clearQueuedSongListViewportRestore();
       return;
     }
 
@@ -2060,6 +2089,7 @@
 
     isAssigningSongFilter = true;
     songFilterMessage = "";
+    queueSongListViewportRestore();
 
     try {
       const targetSongId = songFilterTargetSong.song.id;
@@ -2096,6 +2126,7 @@
       void scrollSongFilterSelectionIntoView();
       songFilterMessage = `Added "${filter.name}".`;
     } catch (err) {
+      clearQueuedSongListViewportRestore();
       console.error("Failed to assign filter to song:", err);
       songFilterMessage = "Failed to add filter to song.";
     } finally {
@@ -3121,8 +3152,8 @@
             <div>
               <h2 id="music-folder-confirm-title">Replace music library?</h2>
               <p>
-                Rebuilding the library removes existing song-filter
-                associations.
+                Rebuilding the library will lose access to the previous song
+                list.
               </p>
             </div>
           </div>
@@ -3142,8 +3173,8 @@
             <div class="settings-card-title">Selected folder</div>
             <div class="settings-card-text">{pendingMusicFolderPath}</div>
             <div class="settings-card-text">
-              Your saved filters will stay, but their links to songs will be
-              cleared because the library is rebuilt from the selected folder.
+              Your saved filters will remain in the app, while previously added
+              song filters are saved in each file's metadata.
             </div>
           </div>
         </div>
