@@ -878,6 +878,9 @@ where
                 .await?;
             self.defer_song_filters_metadata_sync_paths(&mut tx, deferred)
                 .await?;
+
+            //TODO (zor): optimization - it should only refresh the song blobs of songs that had the
+            //filter
             self.song_mutation
                 .refresh_all_song_search_blobs(&mut tx)
                 .await?;
