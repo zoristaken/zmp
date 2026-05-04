@@ -255,6 +255,8 @@ impl SongRepository<Sqlite> for SqliteImpl {
         //TODO (zor): after using the app, verify if searching by substrings actually happens
         //I have a feeling we can improve the performance by moving to a fts5 prefix search
         //without any side effects at all
+        //UPDATE: still monitoring, but for now I've used it at most once, could be benefitial to change to a fts5 table with prefix matching if the number of
+        //songs are enough to notice unresponsive searches (not an issue for normal users)
         for (i, word) in words.iter().enumerate() {
             qb.push("search_blob LIKE ");
             qb.push_bind(format!("%{}%", word));
